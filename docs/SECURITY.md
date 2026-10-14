@@ -31,7 +31,7 @@ The vulnerable glob parser is build tooling, not bundled client/runtime SQL code
 ## Operational limits and review
 
 - Production build requires `PLANORA_SQL_CUTOVER_APPROVED=true` plus core config; passing it does not prove database permissions, import correctness, networking, provider quotas or actual deployment. A maintainer must verify those separately.
-- Public fixture tests/PGlite are not proof of managed PostgreSQL deployment. CI additionally targets a disposable PostgreSQL 16 service, never a production database. Tests reject non-local/non-`planora_test` SQL URLs.
+- Public fixture tests/PGlite are not proof of managed PostgreSQL deployment. Native PostgreSQL 16.14 tests also passed in a loopback-only disposable cluster. CI additionally targets a disposable PostgreSQL 16 service, never a production database. Role tests use transaction-scoped role changes on the same client, not session assumptions across a pool. Tests reject non-local/non-`planora_test` SQL URLs.
 - Optional source read-only GET is not a guarantee about an undocumented remote server's side effects: endpoint review and authorization are mandatory. Challenges are not bypassed.
 - Current schema/parser cannot silently reinterpret unsupported multi-meeting sections or additional source attributes; review and extend safely if verified source evidence requires them.
 - Retention, delivery limits, backups and recovery drills are deployment responsibilities; no real-data deletion/automatic down migration is supplied.

@@ -23,3 +23,28 @@ export async function testDb(seed = true) {
   if (seed) await importCatalog(db, await fixture());
   return db;
 }
+
+/** Exercise real grants without leaking SET ROLE across pooled connections.
+ * Pool.query may discard a client after an expected permission error; therefore
+ * each operation sets its role on the SAME transaction-bound client it uses.
+ * Test-only: production logs in directly as its restricted database role.
+ */
+export function asTestRole(
+  db: import('../server/db').Database,
+  role: 'planora_runtime' | 'planora_worker' | 'planora_mailer'
+): import('../server/db').Database {
+  const transaction: import('../server/db').Database['transaction'] = (
+    fn,
+    readOnly
+  ) =>
+    db.transaction(async (sql) => {
+      await sql.query(`SET LOCAL ROLE ${role}`);
+      return fn(sql);
+    }, readOnly);
+  return {
+    transaction,
+    query: (text, values) => transaction((sql) => sql.query(text, values)),
+    exec: (text) => transaction((sql) => sql.exec(text)),
+    close: async () => {}, // The fixture owner, not a role view, owns the pool.
+  };
+}

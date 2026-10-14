@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { testDb, fixture } from './helpers';
+import { testDb, fixture, asTestRole } from './helpers';
 import { migrate } from '../server/migrations';
 import { importCatalog, getCatalog } from '../server/catalog-repository';
 import {
@@ -87,19 +87,56 @@ test('constraints, foreign keys, failed-write rollback and least-privilege roles
     await db.exec(
       await readFile(new URL('../db/permissions.sql', import.meta.url), 'utf8')
     );
-    await db.query('SET ROLE planora_runtime');
-    await assert.rejects(db.query('DELETE FROM planora.catalog_snapshots'));
+    const runtime = asTestRole(db, 'planora_runtime');
+    assert.equal(
+      (await runtime.query('SELECT current_user')).rows[0].current_user,
+      'planora_runtime'
+    );
     await assert.rejects(
-      db.query('UPDATE planora.catalog_changes SET category=$1', [
+      runtime.query('DELETE FROM planora.catalog_snapshots')
+    );
+    await assert.rejects(
+      runtime.query('UPDATE planora.catalog_changes SET category=$1', [
         'course_removed',
       ])
     );
-    await assert.rejects(db.query('SELECT * FROM planora.schema_migrations'));
+    await assert.rejects(
+      runtime.query('SELECT * FROM planora.schema_migrations')
+    );
     assert.equal(
-      (await db.query('SELECT count(*)::int n FROM planora.courses')).rows[0].n,
+      (await runtime.query('SELECT count(*)::int n FROM planora.courses'))
+        .rows[0].n,
       70
     );
-    await db.query('RESET ROLE');
+
+    // Execute the actual publication pipeline under the restricted runtime role,
+    // not just the fixture owner; the same grants will be needed after cutover.
+    const { createRun, stageRun, publishRun } = await import(
+      '../server/sync-service'
+    );
+    const revised = structuredClone(before.dataset);
+    revised.courses[0].name += ' (runtime grant test)';
+    const publication = await createRun(runtime, term, 'test-admin', 'admin');
+    const proposal = await stageRun(runtime, publication.id, revised);
+    await publishRun(
+      runtime,
+      publication.id,
+      proposal.hash,
+      'test-admin',
+      'Synthetic role verification'
+    );
+    assert.equal(
+      (await getCatalog(runtime, term)).revision,
+      before.revision + 1
+    );
+    assert.equal(
+      (
+        await runtime.query(
+          'SELECT count(*)::int n FROM planora.catalog_changes'
+        )
+      ).rows[0].n,
+      1
+    );
     const publicPrivileges = await db.query(
       "SELECT has_schema_privilege('public','planora','USAGE') AS allowed"
     );
@@ -141,14 +178,20 @@ test('separate worker can stage a complete catalog but cannot publish or read su
         id: string;
       }>
     ).value;
-    await db.query('SET ROLE planora_worker');
-    await assert.rejects(db.query('SELECT * FROM planora.email_subscriptions'));
-    await assert.rejects(
-      db.query("UPDATE planora.courses SET title='not allowed'")
+    const worker = asTestRole(db, 'planora_worker');
+    assert.equal(
+      (await worker.query('SELECT current_user')).rows[0].current_user,
+      'planora_worker'
     );
-    await assert.rejects(db.query('DELETE FROM planora.catalog_changes'));
-    const lease = await claimRun(db, run.id, 'test-contract');
-    const staged = await stageRun(db, run.id, input, {
+    await assert.rejects(
+      worker.query('SELECT * FROM planora.email_subscriptions')
+    );
+    await assert.rejects(
+      worker.query("UPDATE planora.courses SET title='not allowed'")
+    );
+    await assert.rejects(worker.query('DELETE FROM planora.catalog_changes'));
+    const lease = await claimRun(worker, run.id, 'test-contract');
+    const staged = await stageRun(worker, run.id, input, {
       token: lease.token,
       coverage: {
         complete: true,
@@ -160,7 +203,14 @@ test('separate worker can stage a complete catalog but cannot publish or read su
       },
     });
     assert.match(staged.status, /completed/);
-    await db.query('RESET ROLE');
+    const mailer = asTestRole(db, 'planora_mailer');
+    await mailer.query('SELECT * FROM planora.notification_deliveries');
+    await assert.rejects(
+      mailer.query("UPDATE planora.courses SET title='not allowed'")
+    );
+    await assert.rejects(
+      mailer.query("UPDATE planora.sync_runs SET requested_by='not allowed'")
+    );
   } finally {
     await db.close();
   }
