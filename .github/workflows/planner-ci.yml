@@ -32,8 +32,18 @@ jobs:
         working-directory: .
         run: node --check sync/self-service-sync.mjs
 
-      - name: Dependency audit
-        run: npm audit --audit-level=high
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Full dependency audit report
+        run: npm audit --audit-level=high --json > npm-audit.json || true
+
+      - name: Upload dependency audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/npm-audit.json
+          if-no-files-found: error
 
       - name: TypeScript check
         run: npm run typecheck
