@@ -302,23 +302,17 @@ export async function publishRun(
         ]
       );
       if (change.courseId) {
-        const subscribers = (
-          await sql.query(
-            `SELECT s.id FROM planora.email_subscriptions s JOIN planora.subscription_courses sc ON sc.subscription_id=s.id
-          JOIN planora.courses c ON c.id=sc.course_id WHERE s.term_key=$1 AND s.status='active' AND c.term_key=$1 AND c.legacy_id=$2`,
-            [run.term_key, change.courseId]
-          )
-        ).rows;
-        for (const subscriber of subscribers)
-          await sql.query(
-            `INSERT INTO planora.notification_deliveries(id,subscription_id,event_id,kind,event_key) VALUES($1,$2,$3,'catalog_change',$4) ON CONFLICT(event_key) DO NOTHING`,
-            [
-              randomUUID(),
-              subscriber.id,
-              eventId,
-              `${eventId}:${subscriber.id}`,
-            ]
-          );
+        // One statement per academic event, not one round trip per subscriber.
+        // PostgreSQL 15+ supplies gen_random_uuid() without an extra extension.
+        await sql.query(
+          `INSERT INTO planora.notification_deliveries(id,subscription_id,event_id,kind,event_key)
+           SELECT gen_random_uuid(),s.id,$3::uuid,'catalog_change',$3::text||':'||s.id::text
+           FROM planora.email_subscriptions s JOIN planora.subscription_courses sc ON sc.subscription_id=s.id
+           JOIN planora.courses c ON c.id=sc.course_id
+           WHERE s.term_key=$1 AND s.status='active' AND c.term_key=$1 AND c.legacy_id=$2
+           ON CONFLICT(event_key) DO NOTHING`,
+          [run.term_key, change.courseId, eventId]
+        );
       }
     }
     if (afterWrite) await afterWrite(sql);

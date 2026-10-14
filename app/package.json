@@ -13,7 +13,9 @@
     "db:export-redis": "node --env-file-if-exists=.env --import tsx scripts/export-redis.ts",
     "sync:worker": "tsx scripts/sync-worker.ts",
     "notifications:deliver": "node --env-file-if-exists=.env --import tsx scripts/deliver-notifications.ts",
-    "dev:seed": "node --env-file-if-exists=.env --import tsx scripts/database.ts local-seed"
+    "dev:seed": "node --env-file-if-exists=.env --import tsx scripts/database.ts local-seed",
+    "test:e2e": "tsx e2e/catalog-flow.ts",
+    "preview:setup": "tsx scripts/preview-setup.ts"
   },
   "type": "module",
   "engines": {
@@ -25,8 +27,10 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.10",
+    "@sparticuz/chromium": "153.0.0",
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",
+    "playwright-core": "1.64.1",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

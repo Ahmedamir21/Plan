@@ -34,7 +34,7 @@
 
 > **Repository scope:** this upgrade changes **Ahmedamir21/Plan only**. Historical Planora site links are read-only references, not proof of this repository's current deployment. Production SQL cutover requires separate verified setup and explicit approval; live university sync and student email remain disabled by default.
 >
-> Start with the [pre-edit audit](docs/REPOSITORY_AUDIT.md), [SQL setup / safe rollback](docs/SQL_SETUP.md), [implementation report](docs/IMPLEMENTATION_REPORT.md), [sync safety contract](sync/README.md), and [security limits](docs/SECURITY.md).
+> Start with the [pre-edit audit](docs/REPOSITORY_AUDIT.md), [SQL setup / safe rollback](docs/SQL_SETUP.md), [current acceptance evidence](docs/PR2_ACCEPTANCE.md), [sync safety contract](sync/README.md), and [security limits](docs/SECURITY.md).
 
 ## Table of Contents
 
@@ -515,6 +515,7 @@ npm --prefix sync run check
 npm --prefix sync test
 npm --prefix "$P" run typecheck
 npm --prefix "$P" run build
+npm --prefix app run test:e2e
 for suite in test:platform test:data test:assistant test:admin test:completeness test:admin-ui test:import test:patch test:patch-ui test:english test:english-import test:audit test:ssr test:ui test:harness test:catalog test:sync-ui test:notifications-ui test:production-ui; do npm --prefix "$P" run "$suite" || exit 1; done
 ```
 
@@ -525,6 +526,8 @@ Original engine/data/UI/import/admin regressions remain. New tests exercise SQL 
 Vercel root remains **`app`** with both student and admin builds. Keep the existing project's outside-root build support for the unchanged nested planner. **Confirm the actual project belongs to Ahmedamir21/Plan**; do not assume the historical reference site or a similarly named Planora project is the target.
 
 Production requires the normalized schema, validated reviewed import (including any newer legacy Redis live overrides), restricted runtime DB login, verified TLS, private admin/Redis configuration and a preview review. The build is blocked without `PLANORA_SQL_CUTOVER_APPROVED=true` and core configuration. It never migrates/seeds/enables a worker or sends email automatically. The optional assistant continues to require its private `GEMINI_API_KEY`.
+
+The owner-authorized [Plan-only Preview setup runner](docs/PREVIEW_SETUP.md) can provision the isolated SQL schema and verify the actual deployment once private access is configured. No successful cloud deployment is claimed without its evidence.
 
 Follow [SQL cutover and rollback](docs/SQL_SETUP.md), [admin workflow](docs/ADMIN_PANEL.md), [source-worker contract](sync/README.md) and [optional email](docs/NOTIFICATIONS.md). Database provisioning, real source access, real email and deployment are not claimed by a successful fixture build/test.
 

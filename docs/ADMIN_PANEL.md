@@ -31,7 +31,7 @@ A complete changed proposal waits for a human diff review and reason. Removals n
 
 ## Student visibility, local plans and mail
 
-Students download only committed SQL data. Public change history is searchable by course/category/date and excludes private reviewer/source diagnostics. Drafts are never public. On SQL failure the app offers retry and, only if explicitly chosen, a previously downloaded **stale SQL cache**. It does not silently fall back to JSON.
+Students download only committed SQL data. Public change history is searchable by course/category/term, with publication dates displayed and excludes private reviewer/source diagnostics. Drafts are never public. On SQL failure the app offers retry and, only if explicitly chosen, a previously downloaded **stale SQL cache**. It does not silently fall back to JSON.
 
 Local saved choices are not rewritten to a changed section. The browser keeps a raw pre-revision backup, shows affected selected sections and newly introduced overlaps, distinguishes label-only potential issues from stable-ID comparisons, and never claims a real registration changed. It never uploads a student's plan to the sync worker. Older positional shared links display a caution; opening a share preview does not overwrite local choices until the user explicitly saves it.
 

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, createHmac, randomBytes, scryptSync } from 'node:crypto';
 import catalog from '../api/catalog';
+import deployment from '../api/deployment';
 import changes from '../api/changes';
 import admin from '../api/admin';
 import notifications from '../api/notifications';
@@ -82,6 +83,13 @@ test('SQL-only public API, publication visibility, authorization, CSRF and redac
     assert.equal(loaded.status, 200);
     assert.equal(loaded.body.source, 'postgresql');
     assert.equal(loaded.body.courses.length, 57);
+    const evidence = await invoke(deployment);
+    assert.equal(evidence.status, 200);
+    assert.equal(evidence.body.source, 'postgresql');
+    assert.equal(evidence.body.catalog.courses, 70);
+    assert.equal(evidence.body.repository, null);
+    assert(!JSON.stringify(evidence.body).includes('DATABASE_URL'));
+    assert.equal((await invoke(deployment, 'POST')).status, 405);
     assert(loaded.body.semester.key);
     assert.equal(
       (await invoke(catalog, 'GET', { catalog: 'arbitrary' })).status,

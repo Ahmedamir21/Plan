@@ -38,3 +38,7 @@ The vulnerable glob parser is build tooling, not bundled client/runtime SQL code
 - Existing optional same-repository Anthropic PR review requires a privately configured key. Its upstream prompt-injection caveat remains; do not enable it for untrusted PRs. A review/test suite cannot guarantee absence of vulnerabilities.
 
 Check staged diffs and ignored paths before pushing. If credentials were exposed, rotate them privately; never paste them into an issue or chat. No other repository/project/account should be changed during this upgrade.
+
+## Managed Preview boundary
+
+The optional manual `plan-preview` job is restricted to Plan PR #2 and the session branch, depends on CI, and requires protected-environment approval/private credentials. Repository/project/branch/SHA, non-production target, initially empty or correctly bound stores, restricted runtime role and SQL catalog hash are checked. No Planora project or Production variable is written. Provider calls are mocked in local tests; real managed verification is blocked until owner setup. See [PREVIEW_SETUP.md](PREVIEW_SETUP.md). Real Chromium tests block external requests (including the existing Google Fonts request), use disposable contexts and produce no screenshots/traces. Full server/tooling audit remains clean; the original frontend dev-only advisory remains separately documented.

@@ -56,7 +56,7 @@ function event(admin: Admin, action: string, options: Record<string, unknown> = 
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, private'); res.setHeader('X-Content-Type-Options', 'nosniff');
   const config = configured();
-  if (!config) return res.status(503).json({ error: 'Set both admin password hashes and the session secret, and connect Upstash Redis to Production in Vercel.' });
+  if (!config) return res.status(503).json({ error: 'Configure the server-side admin password hashes, session secret, and a dedicated Redis store for this deployment.' });
   if (!['GET', 'POST', 'DELETE'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
   if (req.method !== 'GET' && !sameOrigin(req)) return res.status(403).json({ error: 'Invalid origin' });
   if (req.method === 'POST' && !jsonRequest(req, 300_000)) return res.status(413).json({ error: 'Invalid or oversized JSON request.' });

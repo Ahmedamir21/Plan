@@ -1,7 +1,7 @@
 import { courseDataLastVerified } from '../data/meta';
 import { CREATOR_CREDIT, PRODUCT_TITLE, SEMESTER_CONFIG, TERM_LABEL, TERM_SESSION_LABEL } from '../config/semester';
 
-const GITHUB_REPO_URL = 'https://github.com/Ahmedamir21/Planora';
+const GITHUB_REPO_URL = 'https://github.com/Ahmedamir21/Plan';
 
 const STEPS = [
   'Pick your major — it decides which courses this planner shows you.',
@@ -90,7 +90,7 @@ export function AboutPage({ onBack }: { onBack: () => void }) {
               Course, section, instructor, room and time information reflects the {TERM_LABEL} course data used by this
               project. The dataset was last manually verified against Self-Service on {courseDataLastVerified()}.
               Sections with no confirmed instructor are shown exactly as published — nothing is invented.
-              The dataset itself is never modified: hiding, filtering and conflict marking are all derived views that
+              Your selections never edit the published SQL catalog: hiding, filtering and conflict marking are local views that
               disappear the moment you change your selection. Always double-check final times on the official
               registration portal before registering.
             </p>

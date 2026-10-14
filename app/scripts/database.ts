@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
+import { sep } from 'node:path';
 import { database, activeTerm } from '../server/db';
 import { migrate } from '../server/migrations';
 import { importCatalog, getCatalog } from '../server/catalog-repository';
@@ -32,8 +33,14 @@ try {
       !process.argv.includes('--fixtures-reviewed')
     )
       throw new SafeError('REVIEW_REDIS_LIVE_OVERRIDES_FIRST');
-    if (inputFile && !inputFile.includes('private-exports/'))
-      throw new SafeError('IMPORT_FILE_MUST_BE_IN_IGNORED_PRIVATE_EXPORTS');
+    if (inputFile) {
+      const privateRoot = await realpath(
+        new URL('../private-exports/', import.meta.url)
+      );
+      const resolved = await realpath(inputFile);
+      if (!resolved.startsWith(privateRoot + sep))
+        throw new SafeError('IMPORT_FILE_MUST_BE_IN_IGNORED_PRIVATE_EXPORTS');
+    }
     const input = inputFile
       ? JSON.parse(await readFile(inputFile, 'utf8'))
       : await readFixtures();

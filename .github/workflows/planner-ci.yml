@@ -5,6 +5,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      preview_setup_ack:
+        description: 'Optional: type Plan isolated preview only to run the protected Plan Preview setup'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 jobs:
@@ -60,7 +66,52 @@ jobs:
           npm run typecheck
           npm run build
           for script in test:platform test:data test:assistant test:admin test:completeness test:admin-ui test:import test:patch test:patch-ui test:english test:english-import test:audit test:ssr test:ui test:harness test:catalog test:sync-ui test:notifications-ui test:production-ui; do npm run "$script"; done
+      - name: Controlled browser/API/SQL new-section and changed-time acceptance
+        run: npm --prefix app run test:e2e
       - name: Full tooling audit (known unpatched dev-only braces advisory; see SECURITY)
         working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail
         run: npm audit --audit-level=high
         continue-on-error: true
+
+  preview_acceptance:
+    # Never runs on PR/push or main; this existing workflow can be dispatched on the PR branch.
+    if: github.repository == 'Ahmedamir21/Plan' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/arena/cd36c549-plan' && inputs.preview_setup_ack == 'Plan isolated preview only'
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: plan-preview
+    timeout-minutes: 25
+    concurrency:
+      group: plan-pr-2-isolated-preview
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci
+      - name: Verify scope, initialize isolated services, deploy Preview, run deployed smoke
+        run: npm --prefix app run preview:setup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN_PREVIEW_ACK: ${{ inputs.preview_setup_ack }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          PLAN_PREVIEW_VERCEL_PROJECT_ID: ${{ vars.PLAN_PREVIEW_VERCEL_PROJECT_ID }}
+          PLAN_PREVIEW_DATABASE_OWNER_URL: ${{ secrets.PLAN_PREVIEW_DATABASE_OWNER_URL }}
+          PLAN_PREVIEW_DATABASE_RUNTIME_URL: ${{ secrets.PLAN_PREVIEW_DATABASE_RUNTIME_URL }}
+          PLAN_PREVIEW_REDIS_URL: ${{ secrets.PLAN_PREVIEW_REDIS_URL }}
+          PLAN_PREVIEW_REDIS_TOKEN: ${{ secrets.PLAN_PREVIEW_REDIS_TOKEN }}
+          PLAN_PREVIEW_ADMIN_PASSWORD: ${{ secrets.PLAN_PREVIEW_ADMIN_PASSWORD }}
+          PLAN_PREVIEW_SECOND_ADMIN_PASSWORD: ${{ secrets.PLAN_PREVIEW_SECOND_ADMIN_PASSWORD }}
+          PLANORA_SQL_CUTOVER_APPROVED: 'false'
+          PLANORA_SELF_SERVICE_ENABLED: 'false'
+          PLANORA_EMAIL_MODE: disabled
+          PLANORA_EMAIL_LIVE_APPROVED: 'false'
+          PLANORA_SECURITY_MAIL_ENABLED: 'false'

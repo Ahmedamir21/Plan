@@ -1,0 +1,79 @@
+{
+  "kind": "controlled-fixture-e2e",
+  "database": "native-postgresql",
+  "realUniversityAccess": false,
+  "realEmails": 0,
+  "previewBrowserSmoke": {
+    "adminLogin": true,
+    "privateEditingAndUndo": true,
+    "studentScheduleBuilt": true,
+    "savedScheduleReload": true,
+    "publishedCatalogUnchanged": true,
+    "liveFeaturesDisabled": true,
+    "blockedExternalFontRequests": 2
+  },
+  "discovered": {
+    "pages": 2,
+    "section": "Lab 02",
+    "changedStart": [
+      600,
+      750
+    ],
+    "changedEnd": [
+      660,
+      810
+    ]
+  },
+  "blockedExternalFontRequests": 3,
+  "studentSelectionsUploaded": false,
+  "assertions": {
+    "newSectionDiscovered": true,
+    "changedTimesInDiff": true,
+    "partialAndMalformedRejected": true,
+    "approvalRequired": true,
+    "atomicSqlSnapshotAuditOutbox": true,
+    "originalSelectionsAndRawBackupPreserved": true,
+    "newConflictWarning": true,
+    "retryDeduplicated": true,
+    "failureRetainsPublishedCatalog": true
+  },
+  "counts": {
+    "before": {
+      "courses": 3,
+      "sections": 4,
+      "instructors": 3
+    },
+    "after": {
+      "courses": 3,
+      "sections": 5,
+      "instructors": 3
+    },
+    "academicChanges": 2,
+    "notificationEntries": 2,
+    "realEmails": 0,
+    "mockedEmails": 2,
+    "sourceRequests": 8
+  },
+  "boundaries": {
+    "source": "loopback HTTP fixture, never university",
+    "redis": "in-memory response stub",
+    "browser": "real headless Chromium",
+    "api": "real Vercel handlers via local adapter",
+    "mail": "mock provider",
+    "cutoverApproved": false
+  },
+  "originalCatalogBrowserSmoke": {
+    "counts": {
+      "courses": 70,
+      "sections": 287,
+      "instructors": 92
+    },
+    "adminLogin": true,
+    "privateEditingAndUndo": true,
+    "studentScheduleBuilt": true,
+    "savedScheduleReload": true,
+    "publishedCatalogUnchanged": true,
+    "liveFeaturesDisabled": true,
+    "blockedExternalFontRequests": 2
+  }
+}

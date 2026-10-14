@@ -19,6 +19,8 @@ Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-aren
 | `app/server/admin-store.ts`, `admin-security.ts`, `security.ts`, `report-email.ts` | Existing Redis/auth/report utility code moved out of public route discovery. No academic Redis writer. |
 | `app/db/migrations/`, `permissions.sql` | Additive normalized schema and separate runtime/source-worker/mailer privilege groups. |
 | `app/scripts/` | Explicit database migration/import/verify/export, local API adapter, job/mail CLIs and no-network production configuration gate. |
+| `app/ops/`, `app/scripts/preview-setup.ts` | Manually approved Plan-only managed Preview setup; refuses foreign repositories/databases, keeps production/live features off; not executed without private owner configuration. |
+| `app/e2e/` | Real-browser controlled catalog-change acceptance and reusable actual-Preview smoke, with no screenshots/traces or real source/mail. |
 | `app/tests/` | Isolated PostgreSQL/PGlite, permissions, API security, publication rollback, leases, consent/outbox and deployment-gate tests. |
 | `sync/catalog-reader.mjs`, `source-contract.json` | GET-only reference JSON catalog reader; live source remains unapproved/disabled. |
 | `sync/tests/`, `sync/fixtures/` | Synthetic pagination/auth/challenge/personal-panel/unsafe-action/timeout tests. |

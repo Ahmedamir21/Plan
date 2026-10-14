@@ -47,3 +47,7 @@ No screenshot/trace/raw-data artifact is uploaded. If the environment approval q
 ## Tests
 
 `npm ci && npm run check && npm test` in `sync/`: synthetic fetch/HTML fixtures only; no live HTTP request, account interaction or registered student plan. Covers all pages, coverage, denied actions/URLs, private/unknown fields, redirects, expired auth, MFA/challenge responses, incomplete/duplicate/empty data, bounded retries and sanitized errors. SQL worker-role, lease, stale-base, rollback, no-op and publication tests live in `app/tests/`.
+
+## Controlled end-to-end acceptance
+
+After building the planner, `npm --prefix app run test:e2e` runs the **same** `app/server/catalog-job.ts` pipeline as the worker CLI against two loopback HTTP fixture pages, actual SQL/HTTP handlers and real Chromium. It discovers a new Lab 02 and changed Lecture 01 times, displays/approves the diff through the admin UI, verifies atomic publication, preserved local selections/new conflicts, audit/outbox idempotency and rollback. The original 70-course catalog is also tested through SQL and browser controls. Use an isolated `TEST_DATABASE_URL` to run it against native PostgreSQL. This never authorizes or calls the university; source/Redis/mail are fixtures/mocks. [Acceptance evidence](../docs/PR2_ACCEPTANCE.md).
