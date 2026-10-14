@@ -27,6 +27,13 @@ test('migration, full-field SQL roundtrip, safe retries and import rejection', a
     assert.equal(canonical(stored.dataset), canonical(input));
     assert.equal(stored.hash, datasetHash(input));
     assert.equal((await importCatalog(db, input)).imported, false);
+    assert.throws(
+      () => normalizeDataset({ ...input, majors: [] }),
+      /CATALOG_VALIDATION_FAILED/
+    );
+    const noYears = structuredClone(input);
+    noYears.majors[0].years = [];
+    assert.throws(() => normalizeDataset(noYears), /CATALOG_VALIDATION_FAILED/);
     const changed = structuredClone(input);
     changed.courses[0].name = 'A reviewed change';
     await assert.rejects(importCatalog(db, changed), /IMPORT_WOULD_OVERWRITE/);

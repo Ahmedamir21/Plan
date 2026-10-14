@@ -213,8 +213,12 @@ export function normalizeDataset(input: unknown): {
         );
     }
   }
+  if (!dataset.majors.length)
+    errors.push('At least one academic major is required.');
   const majorIds = new Set<string>();
   for (const major of dataset.majors) {
+    if (!major.years.length)
+      errors.push(`${major.id}: at least one year plan is required.`);
     if (majorIds.has(major.id)) errors.push('Duplicate major ID.');
     majorIds.add(major.id);
     const years = new Set<string>();

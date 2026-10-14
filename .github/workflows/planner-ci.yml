@@ -55,7 +55,7 @@ jobs:
           npm --prefix sync audit --omit=dev --audit-level=high
           npm --prefix Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail audit --omit=dev --audit-level=high
       - name: Planner typecheck, build and all regression suites
-        working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_Zewail
+        working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail
         run: |
           npm run typecheck
           npm run build
