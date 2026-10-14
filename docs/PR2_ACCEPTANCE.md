@@ -10,7 +10,7 @@ The audited PR head at the start of this continuation was **`5a2eca97f773a31820b
 
 Every one of the original **103** PR file records was inventoried against main, along with the continuation changes. The normalized migration, checksum migrator, importer, DAL, run/lease/review/publication code, outbox, gates and tests are real committed implementations—not placeholders described only in a report. See [file-by-file review](PR2_FILE_REVIEW.md) and the PR's exact diff. Original academic JSON fixtures and nested planner directories are unchanged.
 
-Implementation commit and latest hosted-run evidence are recorded below after push. No other repository was modified; no Planora project was configured.
+Continuation implementation commit: **`774a31e695a250a71540d0c160e22a6e037177c0`**. [Hosted Planner CI 38642900240](https://github.com/Ahmedamir21/Plan/actions/runs/38642900240) passed all blocking steps, including real PostgreSQL tests, all 19 planner suites and the real Chromium/API/SQL controlled acceptance. The `preview_acceptance` job was **skipped by design**, not passed: managed-service credentials/approval were unavailable. The optional AI security review was also skipped inside its successful workflow. Subsequent acceptance-report-only commits must retain passing latest-head checks; they do not change this tested implementation. No other repository was modified; no Planora project was configured.
 
 ## What this continuation adds/fixes
 

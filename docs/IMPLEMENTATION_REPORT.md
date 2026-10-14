@@ -1,6 +1,6 @@
 # Implementation and verification report
 
-> **Current continuation/acceptance status:** see [PR2_ACCEPTANCE.md](PR2_ACCEPTANCE.md), [the file-by-file review](PR2_FILE_REVIEW.md) and [the one-time Preview setup path](PREVIEW_SETUP.md). The report below records the earlier implementation checkpoint, not a claim of managed SQL or Vercel completion. The current suite additionally has 17 backend tests and a real Chromium/API/SQL E2E scenario.
+> **Current continuation/acceptance status:** see [PR2_ACCEPTANCE.md](PR2_ACCEPTANCE.md), [the file-by-file review](PR2_FILE_REVIEW.md) and [the one-time Preview setup path](PREVIEW_SETUP.md). The report below records the earlier implementation checkpoint, not a claim of managed SQL or Vercel completion. The current suite additionally has 17 backend tests and a real Chromium/API/SQL E2E scenario; implementation `774a31e695a250a71540d0c160e22a6e037177c0` passed hosted CI including that scenario. Managed provider setup was not run.
 
 Review date: **2026-10-14**. Repository: **Ahmedamir21/Plan**. Working branch: `arena/cd36c549-plan`; audited baseline commit: `fb0b16f794786cdc7fb10773bc25b19e79f5823b`. No other repository, branch, database or external account was changed. See [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md) for the read-only pre-edit findings and baseline.
 
