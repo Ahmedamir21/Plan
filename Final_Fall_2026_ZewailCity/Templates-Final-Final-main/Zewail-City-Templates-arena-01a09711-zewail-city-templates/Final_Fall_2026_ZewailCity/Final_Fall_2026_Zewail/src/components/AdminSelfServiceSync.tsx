@@ -1,154 +1,664 @@
 import { useCallback, useEffect, useState } from 'react';
 
-type SyncStatus = {
-  state?: 'Success' | 'Warning' | 'Failed' | 'Not run';
-  phase?: string; startedAt?: string; finishedAt?: string; updatedAt?: string;
-  courses?: number; sections?: number; warnings?: number; source?: string;
-  backupVersion?: string; restoredVersion?: string; errors?: number;
+type Summary = {
+  courses?: number;
+  sections?: number;
+  inserted?: number;
+  updated?: number;
+  unchanged?: number;
+  additions?: number;
+  removals?: number;
+  modifications?: number;
+  validationErrors?: number;
+  skipped?: number;
+  pagesRead?: number;
+  pageCount?: number;
 };
-type SyncDraft = {
-  source?: string; fetchedAt?: string; stagedAt?: string;
-  validation?: { warnings?: string[]; summary?: { courses?: number; meetings?: number; missingRooms?: number; unassigned?: number } };
-  changes?: { changedCourses?: number; addedCourses?: number; removedCourses?: number; changed?: string[]; added?: string[]; removed?: string[]; previousSections?: number; sections?: number; sectionDelta?: number };
+type Run = {
+  id: string;
+  source: string;
+  status: string;
+  created_at: string;
+  started_at?: string;
+  finished_at?: string;
+  summary: Summary;
+  diagnostics: string[];
+  error_code?: string;
+  proposed_hash?: string;
+  reviewed_by?: string;
+  review_reason?: string;
 };
-
+type Status = {
+  runs: Run[];
+  hasMore: boolean;
+  lastSuccess: string | null;
+  lastAttempt: string | null;
+  active: { id: string; status: string } | null;
+  capability: { enabled: boolean; reason: string | null };
+  deliveries: { status: string; count: number }[];
+  snapshots: { revision: number; created_at: string }[];
+  emailMode: string;
+};
+type AcademicChange = {
+  category: string;
+  courseId?: string;
+  course_legacy_id?: string;
+  code?: string;
+  course_code?: string;
+  sectionKey?: string;
+  section_key?: string;
+  fields: string[];
+  before?: unknown;
+  after?: unknown;
+  before_value?: unknown;
+  after_value?: unknown;
+};
+type Review = {
+  id: string;
+  status: string;
+  hash: string;
+  changes: AcademicChange[];
+  published: boolean;
+};
+export const statusLabels: Record<string, string> = {
+  idle: 'Idle',
+  queued: 'Queued',
+  running: 'Running',
+  validating: 'Validating',
+  awaiting_review: 'Awaiting review — not published',
+  applying: 'Applying changes',
+  completed: 'Completed',
+  completed_with_warnings: 'Completed with warnings',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+const when = (date?: string | null) =>
+  date ? new Date(date).toLocaleString() : 'Not yet';
 async function request(url: string, init?: RequestInit) {
-  const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });
+  const response = await fetch(url, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(65000),
+    ...init,
+  });
   const data = await response.json();
-  if (!response.ok) {
-    const details = Array.isArray(data.errors) ? data.errors.slice(0, 8).join(' · ') : '';
-    throw new Error([data.error || 'Self-Service Sync is unavailable.', details].filter(Boolean).join(' — '));
-  }
+  if (!response.ok)
+    throw new Error(
+      [
+        data.error || 'Sync service unavailable',
+        ...(data.errors || []).slice(0, 5),
+      ].join(' · ')
+    );
   return data;
 }
-const post = (body: unknown) => request('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const when = (value?: string) => value ? new Date(value).toLocaleString() : '—';
-
-export function AdminSelfServiceSync({ onActivity }: { onActivity?: () => void }) {
-  const [status, setStatus] = useState<SyncStatus>({ state: 'Not run', phase: 'idle' });
-  const [draft, setDraft] = useState<SyncDraft | null>(null);
-  const [draftRevision, setDraftRevision] = useState('');
-  const [backups, setBackups] = useState<string[]>([]);
-  const [source, setSource] = useState('');
-  const [restoreReason, setRestoreReason] = useState('');
-  const [payload, setPayload] = useState('');
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-
+const post = (body: unknown) =>
+  request('/api/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+export function AdminSelfServiceSync({
+  onActivity,
+}: {
+  onActivity?: () => void;
+}) {
+  const [data, setData] = useState<Status | null>(null),
+    [page, setPage] = useState(0),
+    [review, setReview] = useState<Review | null>(null);
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState(''),
+    [error, setError] = useState(''),
+    [reason, setReason] = useState(''),
+    [approveRemovals, setApproveRemovals] = useState(false);
   const refresh = useCallback(async () => {
-    const data = await request('/api/admin?action=sync_status');
-    setStatus(data.status || { state: 'Not run', phase: 'idle' });
-    setDraft(data.draft || null);
-    setDraftRevision(data.draftRevision || '');
-    setBackups(data.backups || []);
-  }, []);
-  useEffect(() => { void refresh().catch(cause => setMessage(cause instanceof Error ? cause.message : 'Could not load sync status.')); }, [refresh]);
-
-  const stage = async () => {
-    setBusy(true); setMessage('');
+    const next: Status = await request(
+      `/api/admin?action=sync_status&page=${page}`
+    );
+    setData(next);
+    setError('');
+  }, [page]);
+  useEffect(() => {
+    let stopped = false;
+    void refresh().catch((e) => {
+      if (!stopped) setError(e.message);
+    });
+    return () => {
+      stopped = true;
+    };
+  }, [refresh]);
+  useEffect(() => {
+    if (
+      !data?.active ||
+      !['queued', 'running', 'validating', 'applying'].includes(
+        data.active.status
+      )
+    )
+      return;
+    // Poll known active jobs only. No overlapping requests, no invented progress percentage.
+    let stopped = false,
+      timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        await refresh();
+      } catch (e) {
+        if (!stopped)
+          setError(e instanceof Error ? e.message : 'Status unavailable');
+      } finally {
+        if (!stopped) timer = setTimeout(() => void poll(), 10000);
+      }
+    };
+    timer = setTimeout(() => void poll(), 5000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [data?.active?.id, data?.active?.status, refresh]);
+  const runAction = async (action: () => Promise<unknown>, success: string) => {
+    setBusy(true);
+    setMessage('');
+    setError('');
     try {
-      const parsed = JSON.parse(payload);
-      if (!parsed || !Array.isArray(parsed.courses) || !Array.isArray(parsed.sch)) throw new Error('Fetched JSON must contain courses[] and sch[].');
-      const result = await post({ action: 'sync_stage', dataset: { courses: parsed.courses, sch: parsed.sch }, expectedSyncRevision: draftRevision, source: source.trim() || 'Manual Self-Service sync test', fetchedAt: parsed.fetchedAt, startedAt: parsed.startedAt });
-      setMessage(`Draft staged only — live website unchanged. ${result.warnings?.length || 0} warnings need review.`);
-      setPayload(''); await refresh(); onActivity?.();
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'Could not stage fetched data.'); }
-    finally { setBusy(false); }
+      await action();
+      setMessage(success);
+      await refresh();
+      onActivity?.();
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Operation failed. Refresh history before retrying.'
+      );
+    } finally {
+      setBusy(false);
+    }
   };
-  const publish = async () => {
-    if (!source.trim()) { setMessage('Add what you verified before publishing.'); return; }
-    setBusy(true); setMessage('');
-    try {
-      const result = await post({ action: 'sync_publish', expectedSyncRevision: draftRevision, source: source.trim() });
-      setMessage(`Published after validation. Backup ${result.backupVersion} was created first.`);
-      setSource(''); await refresh(); onActivity?.();
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'Could not publish sync draft.'); }
-    finally { setBusy(false); }
+  const inspect = async (run: Run) => {
+    setReview(null);
+    setApproveRemovals(false);
+    await runAction(
+      async () =>
+        setReview(
+          await request(
+            `/api/admin?action=sync_run&id=${encodeURIComponent(run.id)}`
+          )
+        ),
+      ''
+    );
   };
-  const discard = async () => {
-    setBusy(true); setMessage('');
-    try {
-      await post({ action: 'sync_discard', expectedSyncRevision: draftRevision });
-      setMessage('Fetched draft discarded. Live website was not changed.');
-      await refresh(); onActivity?.();
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'Could not discard sync draft.'); }
-    finally { setBusy(false); }
+  const trigger = () => {
+    if (
+      !window.confirm(
+        'Read the approved Self-Service academic catalog and stage validated differences for review? This cannot add, drop, or change student registrations.'
+      )
+    )
+      return;
+    void runAction(
+      () => post({ action: 'sync_start', confirmed: true }),
+      'Sync queued. Publication requires a separate review.'
+    );
   };
-  const downloadBackup = async (version: string) => {
-    setBusy(true); setMessage('');
-    try {
-      const data = await request(`/api/admin?action=sync_backup&version=${encodeURIComponent(version)}`);
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' }));
-      const link = document.createElement('a'); link.href = url; link.download = `planora-${version}.json`; link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'Could not download backup.'); }
-    finally { setBusy(false); }
+  const publish = () => {
+    if (!review || !reason.trim()) return;
+    if (
+      !window.confirm(
+        'Publish this reviewed academic change set to the SQL catalog? Saved student schedules and Self-Service registrations will not be modified.'
+      )
+    )
+      return;
+    void runAction(async () => {
+      await post({
+        action: 'sync_publish',
+        id: review.id,
+        hash: review.hash,
+        reason: reason.trim(),
+        approveRemovals,
+      });
+      setReview(null);
+      setReason('');
+    }, 'Publication committed. The public catalog and change history are now updated.');
   };
-  const restore = async (version: string, rollback = false) => {
-    if (!restoreReason.trim()) { setMessage('Add a restore / rollback reason first.'); return; }
-    setBusy(true); setMessage('');
-    try {
-      await post({ action: 'sync_restore', version, source: restoreReason.trim() });
-      setMessage(rollback ? `Rolled back to latest backup ${version}.` : `Restored ${version}. The action was added to Activity History.`);
-      setRestoreReason(''); await refresh(); onActivity?.();
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'Could not restore backup.'); }
-    finally { setBusy(false); }
+  const download = async (revision: number) => {
+    const result = await request(
+      `/api/admin?action=sync_backup&revision=${revision}`
+    );
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(result.backup, null, 2)], {
+        type: 'application/json',
+      })
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `planora-sql-revision-${revision}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-
-  const badge = status.state || 'Not run';
-  return <section className="panel p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-lg font-bold">Self-Service Sync <span className="pill ml-2">{badge}</span></h2><p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>Safe pipeline: Fetched Data → validated Draft → manual Publish. Automated fetches never write directly to Live Data.</p></div>
-      <button className="btn px-3 py-2" disabled={busy} onClick={() => void refresh().catch(cause => setMessage(String(cause)))}>Refresh</button>
-    </div>
-
-    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {[[status.phase || 'idle', 'Last phase'], [when(status.startedAt), 'Started'], [when(status.finishedAt || status.updatedAt), 'Finished'], [`${status.courses ?? '—'} / ${status.sections ?? '—'}`, 'Courses / sections']].map(([value,label]) => <div className="panel-soft p-3" key={label}><p className="font-bold">{value}</p><p className="text-xs" style={{ color: 'var(--muted)' }}>{label}</p></div>)}
-    </div>
-
-    <div className="mt-4 grid gap-3 lg:grid-cols-3">
-      <div className="panel-soft p-4"><b>Live Data</b><p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>What students currently receive from the public catalog. It changes only after an explicit Publish or Restore.</p></div>
-      <div className="panel-soft p-4"><b>Fetched Data</b><p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Future Playwright runs land here first. Fetching alone can never change the student website.</p></div>
-      <div className="panel-soft p-4"><b>Draft</b><p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>{draft ? `Ready for review · staged ${when(draft.stagedAt)}` : 'No fetched draft waiting for review.'}</p></div>
-    </div>
-
-    {draft && <div className="panel-soft mt-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Draft review</h3><span className="pill">Live unchanged</span></div>
-      <p className="mt-2 text-xs">Source: {draft.source || '—'} · Fetched: {when(draft.fetchedAt)}</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <div><b>{draft.changes?.changedCourses ?? 0}</b><p className="text-xs">changed courses</p></div>
-        <div><b>+{draft.changes?.addedCourses ?? 0} / -{draft.changes?.removedCourses ?? 0}</b><p className="text-xs">course set</p></div>
-        <div><b>{draft.changes?.previousSections ?? '—'} → {draft.changes?.sections ?? '—'}</b><p className="text-xs">sections</p></div>
-        <div><b>{draft.validation?.summary?.missingRooms ?? 0} / {draft.validation?.summary?.unassigned ?? 0}</b><p className="text-xs">missing rooms / unassigned groups</p></div>
-      </div>
-      {(draft.validation?.warnings?.length || 0) > 0 && <details className="mt-3 text-xs" open><summary className="cursor-pointer font-semibold">{draft.validation!.warnings!.length} warnings to review</summary><ul className="mt-2 list-disc space-y-1 pl-5">{draft.validation!.warnings!.slice(0,30).map((item,index)=><li key={index}>{item}</li>)}</ul></details>}
-      <details className="mt-3 text-xs">
-        <summary className="cursor-pointer font-semibold">View Changes</summary>
-        <div className="mt-2 grid gap-3 md:grid-cols-3">
-          <div><b>Changed</b>{draft.changes?.changed?.length ? <ul className="mt-1 list-disc pl-5">{draft.changes.changed.map(code=><li key={code}>{code}</li>)}</ul> : <p className="mt-1">None</p>}</div>
-          <div><b>Added</b>{draft.changes?.added?.length ? <ul className="mt-1 list-disc pl-5">{draft.changes.added.map(code=><li key={code}>{code}</li>)}</ul> : <p className="mt-1">None</p>}</div>
-          <div><b>Removed</b>{draft.changes?.removed?.length ? <ul className="mt-1 list-disc pl-5">{draft.changes.removed.map(code=><li key={code}>{code}</li>)}</ul> : <p className="mt-1">None</p>}</div>
+  const current =
+    data?.runs.find((r) => r.id === data.active?.id) || data?.runs[0];
+  const summary = current?.summary || {};
+  const reviewRun = data?.runs.find((r) => r.id === review?.id);
+  return (
+    <section className="panel p-5" aria-labelledby="sync-heading">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="sync-heading" className="text-lg font-bold">
+            Self-Service synchronization
+          </h2>
+          <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
+            Read academic catalog → validate complete coverage → inspect
+            differences → publish atomically.
+          </p>
         </div>
-        <p className="mt-2" style={{ color: 'var(--muted)' }}>Section count: {draft.changes?.previousSections ?? '—'} → {draft.changes?.sections ?? '—'} ({(draft.changes?.sectionDelta ?? 0) >= 0 ? '+' : ''}{draft.changes?.sectionDelta ?? 0}). Open the fetched JSON only when you need field-by-field inspection.</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn px-3 py-2"
+            disabled={busy}
+            onClick={() => void runAction(refresh, 'Status refreshed.')}
+          >
+            Refresh status
+          </button>
+          <button
+            className="btn btn-accent px-4 py-2"
+            disabled={busy || !data?.capability.enabled || !!data.active}
+            onClick={trigger}
+          >
+            Sync Self-Service
+          </button>
+        </div>
+      </div>
+      {!data && !error && (
+        <p className="mt-4" role="status">
+          Loading synchronization history…
+        </p>
+      )}
+      {data && !data.capability.enabled && (
+        <p className="panel-soft mt-4 p-3 text-sm" role="note">
+          <strong>Live collection is disabled.</strong> {data.capability.reason}
+          . An authorized, dedicated read-only catalog endpoint and its format
+          must be verified before enabling the worker. No login or registration
+          controls are guessed.
+        </p>
+      )}
+      <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          [
+            statusLabels[data?.active?.status || current?.status || 'idle'] ||
+              'Unknown',
+            'Current / latest status',
+          ],
+          [when(data?.lastSuccess), 'Last successful Self-Service sync'],
+          [when(data?.lastAttempt), 'Last attempted Self-Service sync'],
+          [
+            `${summary.courses ?? '—'} / ${summary.sections ?? '—'}`,
+            'Courses / sections discovered',
+          ],
+        ].map(([value, label]) => (
+          <div className="panel-soft p-3" key={label}>
+            <dt className="text-xs" style={{ color: 'var(--muted)' }}>
+              {label}
+            </dt>
+            <dd
+              className="mt-1 font-semibold"
+              role={label === 'Current / latest status' ? 'status' : undefined}
+            >
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <dl className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {[
+          ['Inserted', summary.inserted],
+          ['Updated', summary.updated],
+          ['Unchanged', summary.unchanged],
+          [
+            'Add / remove / modify',
+            `${summary.additions ?? '—'} / ${summary.removals ?? '—'} / ${summary.modifications ?? '—'}`,
+          ],
+          ['Validation errors', summary.validationErrors],
+          ['Skipped records', summary.skipped],
+        ].map(([label, value]) => (
+          <div className="panel-soft p-3" key={label}>
+            <dt className="text-xs">{label}</dt>
+            <dd className="font-bold">{value ?? '—'}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>
+        Record counts include courses and sections. Partial collection is never
+        published; a failed run keeps the last known-good catalog.
+      </p>
+      {current?.error_code && (
+        <p className="mt-3 text-sm" role="alert">
+          {current.error_code}. Check the approved source contract and private
+          worker configuration, then retry. Do not bypass a security challenge.
+        </p>
+      )}
+      {!!current?.diagnostics.length && (
+        <details className="panel-soft mt-3 p-3">
+          <summary className="cursor-pointer font-semibold">
+            Validation / review notices ({current.diagnostics.length})
+          </summary>
+          <ul className="mt-2 list-disc pl-5 text-sm">
+            {current.diagnostics.map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <div className="mt-5">
+        <h3 className="font-semibold">Synchronization history</h3>
+        {!data?.runs.length ? (
+          <p className="mt-2 text-sm">No runs recorded yet.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {data.runs.map((run) => (
+              <li
+                className="panel-soft flex flex-wrap items-center justify-between gap-3 p-3"
+                key={run.id}
+              >
+                <div>
+                  <b className="text-sm">
+                    {statusLabels[run.status] || run.status}
+                  </b>
+                  <p className="text-xs">
+                    {when(run.created_at)} · {run.source}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    Run {run.id.slice(0, 8)} · Finished: {when(run.finished_at)}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn px-3 py-2 text-xs"
+                    disabled={busy}
+                    onClick={() => void inspect(run)}
+                  >
+                    Inspect changes
+                  </button>
+                  {[
+                    'queued',
+                    'running',
+                    'validating',
+                    'awaiting_review',
+                  ].includes(run.status) && (
+                    <button
+                      className="btn px-3 py-2 text-xs"
+                      disabled={busy}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            'Cancel this run? The public catalog will remain unchanged.'
+                          )
+                        )
+                          void runAction(
+                            () => post({ action: 'sync_cancel', id: run.id }),
+                            'Run cancelled; the catalog was not changed.'
+                          );
+                      }}
+                    >
+                      Cancel run
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-3 flex gap-2">
+          <button
+            className="btn px-3 py-2 text-xs"
+            disabled={busy || page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Newer runs
+          </button>
+          <button
+            className="btn px-3 py-2 text-xs"
+            disabled={busy || !data?.hasMore}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Older runs
+          </button>
+        </div>
+      </div>
+      {review && (
+        <div className="panel-soft mt-5 p-4" aria-label="Change inspection">
+          <h3 className="font-semibold">
+            {review.published
+              ? 'Committed academic changes'
+              : 'Proposed academic changes — not published'}
+          </h3>
+          <p className="mt-1 text-xs">
+            {review.changes.length} change records · Run {review.id.slice(0, 8)}
+          </p>
+          <div className="mt-3 max-h-96 space-y-2 overflow-auto">
+            {review.changes.length === 0 ? (
+              <p>No academic differences recorded.</p>
+            ) : (
+              review.changes.map((change, index) => (
+                <details
+                  className="rounded-lg border p-3"
+                  style={{ borderColor: 'var(--line)' }}
+                  key={index}
+                >
+                  <summary className="cursor-pointer text-sm">
+                    <b>
+                      {change.code || change.course_code || 'Catalog metadata'}
+                    </b>{' '}
+                    · {change.sectionKey || change.section_key || ''} ·{' '}
+                    {change.category.replace(/_/g, ' ')}
+                  </summary>
+                  <p className="mt-2 text-xs">
+                    Fields: {change.fields.join(', ')}
+                  </p>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <b className="text-xs">Previous</b>
+                      <pre className="mt-1 overflow-auto whitespace-pre-wrap break-words text-xs">
+                        {JSON.stringify(
+                          change.before ?? change.before_value ?? null,
+                          null,
+                          2
+                        )}
+                      </pre>
+                    </div>
+                    <div>
+                      <b className="text-xs">Proposed / committed</b>
+                      <pre className="mt-1 overflow-auto whitespace-pre-wrap break-words text-xs">
+                        {JSON.stringify(
+                          change.after ?? change.after_value ?? null,
+                          null,
+                          2
+                        )}
+                      </pre>
+                    </div>
+                  </div>
+                </details>
+              ))
+            )}
+          </div>
+          {!review.published && review.status === 'awaiting_review' && (
+            <>
+              <label className="mt-4 block text-sm font-semibold">
+                Verification and publication reason
+                <input
+                  className="select mt-1 w-full"
+                  maxLength={500}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="Describe the official source and coverage you checked"
+                />
+              </label>
+              {!!review.changes.some((c) =>
+                c.category.endsWith('_removed')
+              ) && (
+                <label className="mt-3 flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={approveRemovals}
+                    onChange={(e) => setApproveRemovals(e.target.checked)}
+                  />
+                  I verified the complete source coverage and explicitly approve
+                  these removals.
+                </label>
+              )}
+              <button
+                className="btn btn-accent mt-3 px-4 py-2"
+                disabled={
+                  busy ||
+                  !reason.trim() ||
+                  (!!review.changes.some((c) =>
+                    c.category.endsWith('_removed')
+                  ) &&
+                    !approveRemovals)
+                }
+                onClick={publish}
+              >
+                Publish reviewed changes
+              </button>
+            </>
+          )}
+          {reviewRun?.review_reason && (
+            <p className="mt-3 text-xs">
+              Reviewed by {reviewRun.reviewed_by}: {reviewRun.review_reason}
+            </p>
+          )}
+        </div>
+      )}
+      <details className="panel-soft mt-5 p-4">
+        <summary className="cursor-pointer font-semibold">
+          Saved data drafts and recovery snapshots
+        </summary>
+        <p className="mt-2 text-sm">
+          Stage all saved editor drafts (including term metadata and major
+          mappings), or stage a previous SQL snapshot. Both require inspection
+          and a separate publication approval.
+        </p>
+        <label className="mt-3 block text-sm">
+          Reason
+          <input
+            className="select mt-1 w-full"
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </label>
+        <button
+          className="btn mt-3 px-4 py-2"
+          disabled={busy || !reason.trim() || !!data?.active}
+          onClick={() => {
+            if (
+              window.confirm(
+                'Stage all saved data drafts for review? This does not publish them.'
+              )
+            )
+              void runAction(
+                () =>
+                  post({
+                    action: 'catalog_stage_drafts',
+                    reason,
+                    confirmed: true,
+                  }),
+                'Saved drafts staged. Inspect the newest run before publishing.'
+              );
+          }}
+        >
+          Stage saved data drafts
+        </button>
+        <ul className="mt-4 space-y-2">
+          {data?.snapshots.map((snapshot) => (
+            <li
+              className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              key={snapshot.revision}
+            >
+              <span>
+                Revision {snapshot.revision} · {when(snapshot.created_at)}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  className="btn px-3 py-2 text-xs"
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(
+                      () => download(snapshot.revision),
+                      'Snapshot downloaded.'
+                    )
+                  }
+                >
+                  Download
+                </button>
+                <button
+                  className="btn px-3 py-2 text-xs"
+                  disabled={busy || !!data.active || !reason.trim()}
+                  onClick={() =>
+                    void runAction(
+                      () =>
+                        post({
+                          action: 'sync_restore',
+                          revision: snapshot.revision,
+                          reason,
+                        }),
+                      'Recovery proposal staged; inspect and approve it before publication.'
+                    )
+                  }
+                >
+                  Stage recovery
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
       </details>
-      <label className="mt-3 block text-xs font-semibold">Verification / publish reason<input className="select mt-1" maxLength={240} value={source} onChange={event=>setSource(event.target.value)} placeholder="e.g. Compared with Self-Service search results on 2026-09-29" /></label>
-      <div className="mt-3 flex flex-wrap gap-2"><button className="btn btn-accent px-4 py-2" disabled={busy || !source.trim()} onClick={()=>void publish()}>Publish Draft</button><button className="btn px-4 py-2" disabled={busy} onClick={()=>void discard()}>Discard Draft</button></div>
-    </div>}
-
-    <details className="panel-soft mt-4 p-4">
-      <summary className="cursor-pointer font-semibold">Manual fetched-data test</summary>
-      <p className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>Temporary testing path before Playwright is connected. Upload/paste a JSON object containing <code>courses</code> and <code>sch</code>. It will only create a Draft.</p>
-      <label className="mt-3 block text-xs font-semibold">Fetched JSON file<input className="select mt-1 w-full" type="file" accept=".json,application/json" onChange={event=>{const file=event.target.files?.[0]; if(file) void file.text().then(setPayload).catch(()=>setMessage('Could not read JSON file.'));}} /></label>
-      <textarea className="select mt-3 min-h-32 w-full font-mono text-xs" value={payload} onChange={event=>setPayload(event.target.value)} placeholder='{"courses":[],"sch":[]}' />
-      <label className="mt-3 block text-xs font-semibold">Source label<input className="select mt-1" maxLength={240} value={source} onChange={event=>setSource(event.target.value)} placeholder="Manual Self-Service comparison" /></label>
-      <button className="btn mt-3 px-4 py-2" disabled={busy || !payload.trim()} onClick={()=>void stage()}>Validate &amp; Stage Draft</button>
-    </details>
-
-    <div className="panel-soft mt-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">Versioned backups</h3><p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>A full snapshot of semester.json, courses.json, majors.json and sch.json is stored before every Sync publish. Daily Sync never edits semester/major structure.</p></div>{backups[0] && <button className="btn px-3 py-2 text-xs" disabled={busy || !restoreReason.trim()} onClick={()=>void restore(backups[0], true)}>Rollback Latest</button>}</div>
-      {backups.length > 0 && <label className="mt-3 block text-xs font-semibold">Restore / rollback reason<input className="select mt-1" maxLength={240} value={restoreReason} onChange={event=>setRestoreReason(event.target.value)} placeholder="e.g. Wrong room changes were published; restoring last verified snapshot" /></label>}
-      {backups.length === 0 ? <p className="mt-3 text-sm">No Sync backups yet.</p> : <div className="mt-3 space-y-2">{backups.map((version,index)=><div className="flex flex-wrap items-center justify-between gap-2" key={version}><div><code className="text-xs">{version}</code>{index === 0 && <span className="pill ml-2">Latest</span>}</div><div className="flex gap-2"><button className="btn px-3 py-2 text-xs" disabled={busy} onClick={()=>void downloadBackup(version)}>Download Backup</button><button className="btn px-3 py-2 text-xs" disabled={busy || !restoreReason.trim()} onClick={()=>void restore(version)}>Restore</button></div></div>)}</div>}
-    </div>
-    {message && <p className="mt-3 text-sm" role="status" style={{ color: 'var(--warn)' }}>{message}</p>}
-  </section>;
+      <div className="panel-soft mt-4 p-3">
+        <h3 className="font-semibold">Email delivery</h3>
+        <p className="mt-1 text-sm">
+          Mode: {data?.emailMode || 'disabled'}.{' '}
+          {data?.deliveries.length
+            ? data.deliveries.map((d) => `${d.status}: ${d.count}`).join(' · ')
+            : 'No deliveries queued.'}
+        </p>
+        <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>
+          Only verified subscribers and committed academic changes are eligible.
+          Mock deliveries are not real emails.
+        </p>
+        <button
+          className="btn mt-3 px-3 py-2 text-xs"
+          disabled={busy || !data || data.emailMode === 'disabled'}
+          onClick={() => {
+            if (
+              window.confirm(
+                'Process up to three queued emails using the configured delivery mode? Live mode sends real emails to verified, opted-in recipients.'
+              )
+            )
+              void runAction(
+                () =>
+                  post({ action: 'notifications_deliver', confirmed: true }),
+                'Delivery batch processed. Review the delivery states above; mocked messages are not real emails.'
+              );
+          }}
+        >
+          Process next email batch
+        </button>
+      </div>
+      {busy && (
+        <p className="mt-3 text-sm" role="status">
+          Waiting for the server… Do not submit again.
+        </p>
+      )}
+      {error && (
+        <p
+          className="mt-3 break-words text-sm"
+          role="alert"
+          style={{ color: 'var(--warn)' }}
+        >
+          {error}
+        </p>
+      )}
+      {message && (
+        <p className="mt-3 text-sm" role="status">
+          {message}
+        </p>
+      )}
+    </section>
+  );
 }

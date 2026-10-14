@@ -14,12 +14,15 @@ export const COMMON_COURSE_IDS: string[] = [
   ...ENGLISH_LEVEL_COURSE_IDS,
 ];
 
-import majorData from '../semester/majors.json';
-export const MAJORS: Major[] = majorData as Major[];
+export const MAJORS: Major[] = [];
 
-export const MAJOR_BY_ID: Record<string, Major> = Object.fromEntries(
-  MAJORS.map((mj) => [mj.id, mj]),
-);
+export const MAJOR_BY_ID: Record<string, Major> = Object.create(null);
+export function hydrateMajors(majors: Major[]) {
+  MAJORS.splice(0,MAJORS.length,...majors);
+  for(const id of Object.keys(MAJOR_BY_ID)) delete MAJOR_BY_ID[id];
+  for(const major of majors) MAJOR_BY_ID[major.id]=major;
+  COMMON_COURSE_IDS.splice(0,COMMON_COURSE_IDS.length,...SCH_ELECTIVE_COURSE_IDS,...ENGLISH_LEVEL_COURSE_IDS);
+}
 
 export function yearPlanOf(
   major: Major,

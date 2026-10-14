@@ -3,6 +3,31 @@
   "private": true,
   "version": "1.0.1",
   "scripts": {
-    "build": "npm --prefix ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail ci && npm --prefix ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail run build && rm -rf dist && cp -r ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/dist dist"
+    "build": "node scripts/check-production-config.mjs && npm --prefix ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail ci && npm --prefix ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail run build && rm -rf dist && cp -r ../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/dist dist",
+    "dev": "node --env-file-if-exists=.env --import tsx scripts/dev-server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test --test-concurrency=1 tests/*.test.ts",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/database.ts migrate",
+    "db:import": "node --env-file-if-exists=.env --import tsx scripts/database.ts import",
+    "db:verify": "node --env-file-if-exists=.env --import tsx scripts/database.ts verify",
+    "db:export-redis": "node --env-file-if-exists=.env --import tsx scripts/export-redis.ts",
+    "sync:worker": "tsx scripts/sync-worker.ts",
+    "notifications:deliver": "node --env-file-if-exists=.env --import tsx scripts/deliver-notifications.ts",
+    "dev:seed": "node --env-file-if-exists=.env --import tsx scripts/database.ts local-seed"
+  },
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "pg": "8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
   }
 }

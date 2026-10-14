@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { redis, storageConfigured } from './admin-store';
-import { notifyAdmins } from './report-email';
-import { jsonRequest, sameOrigin } from './security';
+import { redis, storageConfigured } from '../server/admin-store';
+import { notifyAdmins } from '../server/report-email';
+import { jsonRequest, sameOrigin } from '../server/security';
 
 export const REPORTS_KEY = 'planora:reports:ids:v1';
 export const REPORTS_DATA = 'planora:reports:data:v1';
@@ -26,7 +26,7 @@ export default async function handler(req: any, res: any) {
   if (body.reporterName !== undefined && (typeof body.reporterName !== 'string' || body.reporterName.length > 60)) return res.status(400).json({ error: 'Reporter name is too long.' });
   if (fields.some(field => typeof body[field] !== 'string') || !Array.isArray(body.types) || body.types.length < 1 || body.types.length > TYPES.length || body.types.some((type: unknown) => !TYPES.includes(type as string))) return res.status(400).json({ error: 'Please select the problem and describe it.' });
   const report = {
-    id: randomUUID(), at: new Date().toISOString(), status: 'new', types: [...new Set(body.types)],
+    id: randomUUID(), at: new Date().toISOString(), status: 'new', types: [...new Set<string>(body.types)],
     courseCode: body.courseCode.trim().slice(0, 80), component: body.component.trim().slice(0, 30),
     section: body.section.trim().slice(0, 40), details: body.details.trim().slice(0, 1500),
     publishedData: body.publishedData.trim().slice(0, 3000),

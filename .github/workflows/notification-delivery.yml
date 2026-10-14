@@ -1,0 +1,38 @@
+name: Optional Academic Email Delivery
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: plan-academic-email-delivery
+  cancel-in-progress: false
+jobs:
+  deliver:
+    if: github.repository == 'Ahmedamir21/Plan' && vars.PLANORA_EMAIL_DELIVERY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: notifications
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci
+      - name: Process bounded email batch
+        run: npm --prefix app run notifications:deliver
+        env:
+          DATABASE_URL: ${{ secrets.PLANORA_EMAIL_DATABASE_URL }}
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+          PLANORA_EMAIL_MODE: ${{ vars.PLANORA_EMAIL_MODE }}
+          PLANORA_EMAIL_LIVE_APPROVED: ${{ vars.PLANORA_EMAIL_LIVE_APPROVED }}
+          PLANORA_PUBLIC_URL: ${{ vars.PLANORA_PUBLIC_URL }}
+          PLANORA_EMAIL_FROM: ${{ vars.PLANORA_EMAIL_FROM }}
+          PLANORA_EMAIL_TEST_RECIPIENT: ${{ secrets.PLANORA_EMAIL_TEST_RECIPIENT }}
+          PLANORA_EMAIL_TOKEN_SECRET: ${{ secrets.PLANORA_EMAIL_TOKEN_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

@@ -9,3 +9,12 @@
 !**/.env.example
 .vercel/
 **/.vercel/
+# Local SQL files, private exports and browser/session diagnostics are never source.
+**/.data/
+**/private-exports/
+**/playwright-report/
+**/test-results/
+**/*.trace.zip
+**/storage-state*.json
+**/npm-audit.json
+**/*.log

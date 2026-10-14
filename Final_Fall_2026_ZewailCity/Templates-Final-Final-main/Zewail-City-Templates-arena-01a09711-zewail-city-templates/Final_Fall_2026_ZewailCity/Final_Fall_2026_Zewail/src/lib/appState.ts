@@ -1,9 +1,11 @@
 import { COURSE_BY_ID } from '../data/courses';
 import { MAJOR_BY_ID } from '../data/majors';
-import { emptyPick, optionsFor, type PickState } from './picks';
+import { emptyPick, type PickState } from './picks';
 import type { MeetingType } from '../types';
 import { sanitizePreferences, type SchedulePreferences } from './preferences';
 import { isValidCourseFilter, isValidTypeFilter, isValidYearId } from './stateValidation';
+import { catalogRevision } from './catalogClient';
+import { parseSavedMeeting, sanitizeSnapshot, selectedSnapshot, type SelectedSnapshot } from './scheduleImpact';
 import { LEGACY_UNTAGGED_SEMESTER_KEY, SEMESTER_CONFIG } from '../config/semester';
 
 /**
@@ -14,7 +16,11 @@ import { LEGACY_UNTAGGED_SEMESTER_KEY, SEMESTER_CONFIG } from '../config/semeste
  *
  * Nothing about the user's *identity* is ever stored; only opaque ids and small ints.
  */
-const STORAGE_KEY = 'zw-app-state-v2';
+export const STORAGE_KEY = 'zw-app-state-v2';
+let protectedRaw: string | null = null;
+let persistencePaused = false;
+export const preservedSchedule = () => protectedRaw;
+export const isPersistencePaused = () => persistencePaused;
 
 const KIND_ORDER: MeetingType[] = ['Lecture', 'Lab', 'Tutorial'];
 
@@ -70,11 +76,13 @@ export interface PersistedState {
   courseFilter: string;
   preferences: SchedulePreferences;
   savedAt: number;
+  catalogRevision?: number;
+  selectedSnapshot?: SelectedSnapshot;
 }
 
 /**
  * Validate a decoded blob strictly. Anything malformed, out of range, or referring to a
- * course/section that no longer exists is dropped rather than applied, so a corrupted or
+ * malformed value is dropped rather than applied; well-formed historical course/section keys are retained, so a corrupted or
  * outdated entry can never produce a broken UI.
  */
 function validate(raw: unknown): PersistedState | null {
@@ -95,15 +103,14 @@ function validate(raw: unknown): PersistedState | null {
   const picks: PickState = {};
   if (r.picks && typeof r.picks === 'object') {
     Object.entries(r.picks as Record<string, unknown>).forEach(([courseId, value]) => {
-      const course = COURSE_BY_ID[courseId];
-      if (!course || !value || typeof value !== 'object') return;
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(courseId) || ['__proto__','constructor','prototype'].includes(courseId) || !value || typeof value !== 'object') return;
       const v = value as Record<string, unknown>;
       const pick = emptyPick();
       KIND_ORDER.forEach((kind) => {
         const key = v[kind];
         if (typeof key !== 'string') return;
-        // Reject section ids that no longer resolve — prevents phantom selections.
-        if (optionsFor(course, kind).some((o) => o.key === key)) pick[kind] = key;
+        // Preserve a well-formed historical choice; never retarget a changed time silently.
+        if (parseSavedMeeting(key,kind)) pick[kind] = key;
       });
       picks[courseId] = pick;
     });
@@ -131,25 +138,48 @@ function validate(raw: unknown): PersistedState | null {
     // Structural validation happens once here — never a blind cast of stored JSON.
     preferences: sanitizePreferences(r.preferences),
     savedAt: typeof r.savedAt === 'number' ? r.savedAt : 0,
+    catalogRevision: typeof r.catalogRevision === 'number' ? r.catalogRevision : undefined,
+    selectedSnapshot: sanitizeSnapshot(r.selectedSnapshot),
   };
 }
 
+function preserveRaw(raw:string) {
+  protectedRaw=raw;
+  let key=`planora-preserved-schedule:${SEMESTER_CONFIG.key}:before-${catalogRevision}`;
+  try {
+    const previous=window.localStorage.getItem(key);
+    if(previous===raw)return;
+    if(previous!==null)key+=`:${Date.now()}`;
+    window.localStorage.setItem(key,raw);
+  }catch{persistencePaused=true;}
+}
 export function loadAppState(): PersistedState | null {
   if (typeof window === 'undefined') return null;
+  let raw:string|null=null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return validate(JSON.parse(raw));
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>;
+      // Preserve raw state BEFORE validation/autosave, including a removed course or old term.
+      if (record.catalogRevision !== catalogRevision || record.semesterKey !== SEMESTER_CONFIG.key) preserveRaw(raw);
+    }else preserveRaw(raw);
+    return validate(parsed);
   } catch {
-    // Corrupted JSON or unavailable storage: fall back to safe defaults, never throw.
+    if(raw)preserveRaw(raw); // Even a corrupt record remains downloadable rather than being silently erased.
     return null;
   }
 }
 
 export function saveAppState(state: Omit<PersistedState, 'savedAt' | 'semesterKey'>): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || persistencePaused) return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, semesterKey: SEMESTER_CONFIG.key, savedAt: Date.now() }));
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    let previous: Record<string, unknown> = {};
+    try { previous = raw ? JSON.parse(raw) : {}; } catch { /* A corrupt blob must not disable new, valid saves. */ }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, semesterKey: SEMESTER_CONFIG.key, savedAt: Date.now(),
+      catalogRevision, selectedSnapshot: selectedSnapshot(state.picks,COURSE_BY_ID,sanitizeSnapshot(previous?.selectedSnapshot)) }));
   } catch {
     /* storage full or blocked — persistence is best-effort, the app keeps working */
   }

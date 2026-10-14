@@ -29,11 +29,16 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
+          // Never replace the student app shell with an admin page or an error response.
+          if (response.ok && (url.pathname === '/' || url.pathname === '/index.html')) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
+          }
           return response;
         })
-        .catch(() => caches.match('/')),
+        .catch(async () => (url.pathname === '/' || url.pathname === '/index.html')
+          ? (await caches.match('/')) || new Response('Planner unavailable offline', { status: 503 })
+          : new Response('This page requires a network connection', { status: 503 })),
     );
     return;
   }

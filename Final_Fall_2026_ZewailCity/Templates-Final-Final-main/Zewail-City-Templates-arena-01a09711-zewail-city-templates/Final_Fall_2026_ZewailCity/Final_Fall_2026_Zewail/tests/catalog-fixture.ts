@@ -1,0 +1,11 @@
+import courses from '../src/semester/courses.json';
+import sch from '../src/semester/sch.json';
+import majors from '../src/semester/majors.json';
+import semester from '../src/semester/semester.json';
+import { hydrateCatalog } from '../src/data/courses';
+import { hydrateMajors } from '../src/data/majors';
+import { hydrateSemester } from '../src/config/semester';
+import type { Course, Major } from '../src/types';
+hydrateSemester(semester);
+hydrateCatalog(courses as Course[], sch as Course[]);
+hydrateMajors(majors as Major[]);

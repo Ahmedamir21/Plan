@@ -1,3 +1,4 @@
+import { parseSavedMeeting } from './scheduleImpact';
 import { COURSE_BY_ID } from '../data/courses';
 import { emptyPick, optionsFor, type PickState } from './picks';
 import { MAJOR_BY_ID } from '../data/majors';
@@ -17,19 +18,14 @@ export const SCHEDULE_PARAM = 'schedule';
 const KIND_ORDER: MeetingType[] = ['Lecture', 'Lab', 'Tutorial'];
 
 function base64UrlEncode(input: string): string {
-  const base64 = window.btoa(input);
+  const base64 = window.btoa(Array.from(new TextEncoder().encode(input),byte=>String.fromCharCode(byte)).join(''));
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 function base64UrlDecode(input: string): string {
   const padded = input.replace(/-/g, '+').replace(/_/g, '/');
   const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
-  return window.atob(padded + pad);
-}
-
-function optionIndex(course: Course, kind: MeetingType, key: string | null): number {
-  if (!key) return -1;
-  return optionsFor(course, kind).findIndex((o) => o.key === key);
+  return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(window.atob(padded + pad),char=>char.charCodeAt(0)));
 }
 
 export interface ShareExtras {
@@ -49,8 +45,8 @@ export interface ShareExtras {
 
 /**
  * Encode everything needed to reproduce the schedule state: the major, each taken course's
- * option index, the per-course instructor filter, the active filters, and the compact
- * preferences. No names, emails or anything sensitive — only opaque ids and small integers.
+ * exact meeting key, the per-course instructor filter, the active filters, and the compact
+ * preferences. No names, emails or anything sensitive — opaque course IDs and the selected public meeting facts.
  */
 export function encodeSchedule(
   majorId: string,
@@ -58,17 +54,11 @@ export function encodeSchedule(
   picks: PickState,
   extras?: ShareExtras,
 ): string {
-  const rows: [string, number, number, number][] = [];
-  courses.forEach((course) => {
-    const pick = picks[course.id];
-    if (!pick) return;
-    rows.push([
-      course.id,
-      optionIndex(course, 'Lecture', pick.Lecture),
-      optionIndex(course, 'Lab', pick.Lab),
-      optionIndex(course, 'Tutorial', pick.Tutorial),
-    ]);
-  });
+  const rows: [string, string|null, string|null, string|null][] = [];
+  for(const [id,pick] of Object.entries(picks)) {
+    if(!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(id))continue;
+    rows.push([id,...KIND_ORDER.map(kind=>parseSavedMeeting(pick[kind],kind)?pick[kind]:null)] as [string,string|null,string|null,string|null]);
+  }
 
   // Instructor filter, emitted only for courses that differ from what the picks already imply.
   const inf: [string, number][] = [];
@@ -81,9 +71,9 @@ export function encodeSchedule(
     });
   }
 
-  // v5 adds the semester key (`t`) so a link can never be interpreted against
-  // another term's dataset. v3/v4 remain readable for Fall 2026 compatibility.
-  const payload: Record<string, unknown> = { v: 5, t: SEMESTER_CONFIG.key, m: majorId, r: rows };
+  // v6 preserves exact meeting facts instead of positional indices that can shift after SQL updates.
+  // v3–v5 are still readable, with an explicit caution because their original sections cannot be proved.
+  const payload: Record<string, unknown> = { v: 6, t: SEMESTER_CONFIG.key, m: majorId, r: rows };
   if (extras?.yearId && isValidYearId(extras.yearId)) payload.y = extras.yearId;
   if (inf.length) payload.inf = inf;
   if (extras?.requireComplete === false) payload.rc = 0;
@@ -98,6 +88,7 @@ export function encodeSchedule(
 
 export interface DecodedSchedule {
   majorId: string;
+  legacySections?: boolean;
   /** Validated year id, or undefined for pre-year (v3) links — caller defaults to the first year. */
   yearId?: string;
   picks: PickState;
@@ -110,6 +101,7 @@ export interface DecodedSchedule {
 
 export function decodeSchedule(param: string): DecodedSchedule | null {
   try {
+    if(param.length>20000)return null;
     const parsed = JSON.parse(base64UrlDecode(param)) as {
       v?: number;
       t?: unknown;
@@ -122,6 +114,7 @@ export function decodeSchedule(param: string): DecodedSchedule | null {
       cf?: unknown;
       pr?: CompactPreferences;
     };
+    if (parsed && parsed.v !== undefined && ![3,4,5,6].includes(parsed.v)) return null;
     if (!parsed || typeof parsed.m !== 'string' || !MAJOR_BY_ID[parsed.m] || !Array.isArray(parsed.r)) return null;
 
     const sourceSemesterKey =
@@ -137,6 +130,12 @@ export function decodeSchedule(param: string): DecodedSchedule | null {
 
     parsed.r.forEach((row) => {
       if (!Array.isArray(row) || row.length !== 4) return;
+      if(parsed.v===6) {
+        const [id,...keys]=row;
+        if(typeof id!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$/.test(id)||['__proto__','constructor','prototype'].includes(id))return;
+        const pick=emptyPick();KIND_ORDER.forEach((kind,i)=>{if(parseSavedMeeting(keys[i],kind))pick[kind]=keys[i] as string;});
+        picks[id]=pick;return;
+      }
       const [courseId, li, bi, ti] = row as [string, number, number, number];
       const course = COURSE_BY_ID[courseId];
       if (!course) return; // unknown/removed course id — skip, never crash
@@ -167,6 +166,7 @@ export function decodeSchedule(param: string): DecodedSchedule | null {
 
     return {
       majorId: parsed.m,
+      legacySections: parsed.v !== 6,
       // v3/v4 links carry no semester key but are accepted only for their known legacy term.
       yearId: isValidYearId(parsed.y) ? parsed.y : undefined,
       picks,
@@ -218,7 +218,7 @@ export function readScheduleFromLocation(): DecodedSchedule | null {
   const decoded = decodeSchedule(raw);
   // Reject payloads that decode but name an unknown major — treat as no shared state at all.
   if (decoded && !MAJOR_BY_ID[decoded.majorId]) return null;
-  if (decoded) {
+  if (decoded?.legacySections) {
     // Drop any day codes we don't recognise so a future format change can't break rendering.
     (Object.keys(decoded.picks) as string[]).forEach((id) => {
       if (!COURSE_BY_ID[id]) delete decoded.picks[id];

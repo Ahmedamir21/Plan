@@ -1,9 +1,12 @@
+import './catalog-fixture';
+import { testDb } from '../../../../../../app/tests/helpers';
+import { useTestDatabase } from '../../../../../../app/server/db';
 import { createHash, randomBytes, scryptSync } from 'node:crypto';
 import handler from '../../../../../../app/api/admin';
 import catalogHandler from '../../../../../../app/api/catalog';
 import reportHandler from '../../../../../../app/api/reports';
 import feedbackHandler from '../../../../../../app/api/feedback';
-import { redis, storageConfigured } from '../../../../../../app/api/admin-store';
+import { redis, storageConfigured } from '../../../../../../app/server/admin-store';
 import semester from '../src/semester/semester.json';
 import courses from '../src/semester/courses.json';
 import sch from '../src/semester/sch.json';
@@ -162,7 +165,7 @@ async function main() {
   meeting.room = 'VERIFIED-TEST-ROOM';
   const content = JSON.stringify(changedCourses);
   const live = await call('GET', {}, ahmed, { action: 'live', file: 'courses.json' });
-  assert(live.code === 200 && live.body.revision === rev(JSON.stringify(courses)), 'Live catalog revision missing');
+  assert(live.code === 200 && live.body.revision === rev(live.body.content), 'Live catalog revision missing');
   const privateDraft = await call('POST', { action: 'save_draft', file: 'courses.json', content, expectedRevision: '', source: 'Verified test' }, ahmed);
   assert(privateDraft.code === 200 && (await catalogCall()).body.courses[0].instructors[0].lectures[0].room === originalRoom, 'Private import was published');
   assert((await call('POST', { action: 'save', file: 'courses.json', content, expectedRevision: '', source: 'Verified test' }, '', {}, 'https://example.test')).code === 401, 'Guest published a change');
@@ -174,12 +177,14 @@ async function main() {
   assert(published.code === 200 && published.body.published, `Verified save failed: ${JSON.stringify(published.body)}`);
   assert((await catalogCall()).body.courses[0].instructors[0].lectures[0].room === 'VERIFIED-TEST-ROOM', 'Published room did not reach public catalog');
   assert(hydrateCatalog((await catalogCall()).body.courses, (await catalogCall()).body.sch) && COURSE_BY_ID[changedCourses[0].id].instructors[0].lectures[0].room === 'VERIFIED-TEST-ROOM', 'Student planner did not hydrate from live data');
-  assert(!hydrateCatalog(changedCourses.slice(1), sch), 'Incomplete live catalog replaced the planner');
+  assert(!hydrateCatalog([...changedCourses, changedCourses[0]], sch), 'Duplicate IDs replaced the planner');
   assert(hydrateCatalog(courses, sch), 'Could not restore built-in planner data after test');
   assert((await call('POST', { action: 'save', file: 'courses.json', content: JSON.stringify(courses), expectedRevision: published.body.revision, expectedLiveRevision: live.body.revision, source: 'Stale' }, youssef)).code === 409, 'Stale live revision accepted');
   assert((await call('POST', { action: 'undo_live', file: 'courses.json', expectedLiveRevision: live.body.revision }, ahmed)).code === 409, 'Stale published undo accepted');
   const rollback = await call('POST', { action: 'undo_live', file: 'courses.json', expectedLiveRevision: published.body.liveRevision }, ahmed);
-  assert(rollback.code === 200 && (await catalogCall()).body.courses[0].instructors[0].lectures[0].room === originalRoom, 'Published rollback failed');
+  assert(rollback.code === 200 && rollback.body.staged, `Recovery was not staged for review: ${JSON.stringify(rollback)}`);
+  const recovery = await call('POST', { action:'sync_publish',id:rollback.body.id,hash:rollback.body.hash,reason:'Verified recovery in test',approveRemovals:false },ahmed);
+  assert(recovery.code === 200 && (await catalogCall()).body.courses[0].instructors[0].lectures[0].room === originalRoom, 'Reviewed rollback failed');
   assert(originalCatalog.sch.length === (await catalogCall()).body.sch.length, 'Unrelated catalog changed');
   const report = { types: ['Day or time', 'Room'], courseCode: 'CSAI 205', component: 'Lecture', section: '03', details: 'Please check this meeting.', publishedData: 'Current meeting' };
   assert((await reportCall(report, 'https://evil.test')).code === 403, 'Cross-origin report accepted');
@@ -247,4 +252,6 @@ async function main() {
   assert((await call('GET')).code === 200, 'Admin unavailable with Vercel Upstash KV integration');
   console.log('Admin: two accounts, session security, durable attribution, history, stale-save protection and storage failure OK');
 }
-void main().catch(error => { console.error(error); process.exitCode = 1; });
+const db = await testDb();
+useTestDatabase(db);
+try { await main(); } catch(error) { console.error(error); process.exitCode=1; } finally { useTestDatabase(); await db.close(); }
