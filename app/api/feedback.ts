@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { redis, storageConfigured } from '../server/admin-store';
-import { jsonRequest, sameOrigin } from '../server/security';
+import { redis, storageConfigured } from '../server/admin-store.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
 
 export const FEEDBACK_IDS = 'planora:feedback:ids:v1';
 export const FEEDBACK_DATA = 'planora:feedback:data:v1';
