@@ -6,7 +6,7 @@ Open `/admin.html` on the **verified deployment of Ahmedamir21/Plan**, or use th
 
 The two fixed account definitions remain in `app/admin-accounts.ts`. Each uses a separate private scrypt hash. Generate it with the existing hidden-input `node scripts/hash-admin-password.mjs` command and store it privately under that account's variable listed in `app/.env.example`. Generate each separately. Keep one strong private session signing secret. There is no default/shared development password. Rotating a hash invalidates that account's old signed sessions; rotating the session secret invalidates all.
 
-Existing Upstash/KV REST configuration is still required for distributed login/write limits, private report/feedback inboxes and legacy login/security history. **Academic live data, drafts, snapshots and publication history now use SQL**, not Redis. See [SQL_SETUP.md](SQL_SETUP.md) before deployment: migrations/import/permissions and explicit production cutover approval are required. A missing configuration or storage failure is an error, never a pretend saved state.
+All admin rate limits, private report/feedback inboxes, login/security history and academic data use the existing PostgreSQL database on the free Supabase project. No Redis, Upstash, paid integration or credit card is required. The PostgreSQL key/value adapter uses the same database connection and atomic SQL transactions. See [SQL_SETUP.md](SQL_SETUP.md) for database setup; production remains separate and is not changed by this preview branch. A missing configuration or storage failure is an error, never a pretend saved state.
 
 All private read/write actions authorize the signed server session; same-origin JSON, body limits and shared write throttling protect changes. The eight-hour Secure/HttpOnly/SameSite=Strict cookie is scoped to the admin API. Logout expires the current browser cookie; a copied token requires expiry/hash/secret rotation to invalidate. No public role flag grants access.
 
@@ -39,7 +39,7 @@ Optional course-update email requires a separately selected course list, consent
 
 ## Existing reports, feedback and security history
 
-Reports and general feedback remain private Redis inboxes, with their existing size/rate limits, server authorization, review notes/statuses and attribution. The per-course report flow remains separate from editing academic data; resolving a report alone never changes the catalog. Optional names/free text are user supplied and should not contain sensitive information. No student ID or university login is requested.
+Reports and general feedback remain private PostgreSQL-backed inboxes, with their existing size/rate limits, server authorization, review notes/statuses and attribution. The per-course report flow remains separate from editing academic data; resolving a report alone never changes the catalog. Optional names/free text are user supplied and should not contain sensitive information. No student ID or university login is requested.
 
 Existing optional report and sign-in security alerts remain separate Apps Script/webhook integrations; see [REPORT_EMAIL.md](REPORT_EMAIL.md). They must not be enabled/tested against real recipients without approval. Private sign-in logs retain their existing limited history/retention and never log passwords. The admin **Published section completeness** view still highlights unknown rooms and unassigned instructors; absence must be checked, not invented.
 
