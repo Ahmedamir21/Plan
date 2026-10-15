@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { SafeError } from './errors';
+import { SafeError } from './errors.js';
 
 const clean = (s: string) => s.normalize('NFC').replace(/\s+/g, ' ').trim();
 const text = (max: number) => z.string().max(max).transform(clean);
