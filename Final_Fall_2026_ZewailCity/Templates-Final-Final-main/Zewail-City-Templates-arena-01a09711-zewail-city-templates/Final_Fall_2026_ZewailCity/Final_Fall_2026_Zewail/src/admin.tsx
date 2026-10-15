@@ -25,7 +25,19 @@ const filenames = Object.keys(seed) as FileName[];
 
 async function request(url: string, init?: RequestInit) {
   const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });
-  const data = await response.json();
+  const raw = await response.text();
+  let data: any = {};
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = {
+        error: response.ok
+          ? 'The admin service returned an invalid response.'
+          : `The admin service failed (HTTP ${response.status}) and returned a non-JSON error page.`,
+      };
+    }
+  }
   if (!response.ok) {
     const details = Array.isArray(data.errors) ? data.errors.slice(0, 5).filter((item: unknown): item is string => typeof item === 'string').join(' · ') : '';
     throw new Error([data.error || 'The admin service is unavailable.', details].filter(Boolean).join(' — '));
