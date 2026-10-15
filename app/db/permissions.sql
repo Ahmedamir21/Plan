@@ -45,3 +45,6 @@ REVOKE ALL ON ALL TABLES IN SCHEMA planora FROM planora_mailer;
 GRANT USAGE ON SCHEMA planora TO planora_mailer;
 GRANT SELECT ON planora.email_subscriptions, planora.notification_deliveries, planora.catalog_changes TO planora_mailer;
 GRANT UPDATE ON planora.notification_deliveries TO planora_mailer;
+
+-- Private admin key/value storage (sessions/rate limits/audit queues); never exposed to clients.
+GRANT SELECT, INSERT, UPDATE, DELETE ON planora.admin_kv_store TO planora_runtime;
