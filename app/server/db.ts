@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import { SafeError } from './errors.ts';
+import { SafeError } from './errors.js';
 
 export interface Sql {
   exec(text: string): Promise<void>;
