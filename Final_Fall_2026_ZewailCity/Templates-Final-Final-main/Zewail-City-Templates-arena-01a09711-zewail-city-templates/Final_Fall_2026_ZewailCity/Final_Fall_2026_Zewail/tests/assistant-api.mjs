@@ -4,7 +4,7 @@ import { localDatabase, useTestDatabase } from '../../../../../../app/server/db'
 process.env.NODE_ENV = 'test';
 process.env.GEMINI_API_KEY = 'test-only';
 process.env.DATABASE_URL = 'postgresql://localhost/planora_test';
-const testDb = await localDatabase();
+const testDb = await localDatabase('/tmp/planora-assistant-api-test');
 await testDb.exec('CREATE SCHEMA IF NOT EXISTS planora; CREATE TABLE IF NOT EXISTS planora.admin_kv_store (key text PRIMARY KEY, kind text NOT NULL, value jsonb NOT NULL, expires_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now())');
 useTestDatabase(testDb);
 let seq = 0;
