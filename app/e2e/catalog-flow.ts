@@ -61,6 +61,9 @@ const close = (server: Server) =>
   new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve()))
   );
+// The API's storage readiness guard checks DATABASE_URL, while CI provides the isolated test DB as TEST_DATABASE_URL.
+// Mirror only that explicitly isolated test URL so readiness checks exercise the same local PostgreSQL instance.
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 const db = await testDb(false);
 const originalFetch = globalThis.fetch;
 let browser: Awaited<ReturnType<typeof openBrowser>> | undefined;
