@@ -245,13 +245,12 @@ async function main() {
   storageDown = false;
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
-  process.env.KV_REST_API_URL = 'https://kv.example.test';
-  process.env.KV_REST_API_TOKEN = 'test-kv-token';
-  assert(storageConfigured(), 'Vercel Upstash KV integration was not detected');
-  assert((await redis(['GET', 'test:key'])) === null, 'Vercel Upstash KV REST access failed');
-  assert((await call('GET')).code === 200, 'Admin unavailable with Vercel Upstash KV integration');
+  assert(storageConfigured(), 'PostgreSQL storage configuration was not detected');
+  assert((await redis(['GET', 'test:key'])) === null, 'PostgreSQL storage read failed');
+  assert((await call('GET')).code === 200, 'Admin unavailable with PostgreSQL storage');
   console.log('Admin: two accounts, session security, durable attribution, history, stale-save protection and storage failure OK');
 }
 const db = await testDb();
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 useTestDatabase(db);
 try { await main(); } catch(error) { console.error(error); process.exitCode=1; } finally { useTestDatabase(); await db.close(); }
