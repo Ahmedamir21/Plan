@@ -6,7 +6,7 @@ import {
   sectionRows,
   type Course,
   type Dataset,
-} from './catalog-model';
+} from './catalog-model.js';
 
 export type Change = {
   catalog: string | null;
