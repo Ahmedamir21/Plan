@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Database, Sql } from './db';
-import { readCatalog, writeCatalog } from './catalog-repository';
+import type { Database, Sql } from './db.js';
+import { readCatalog, writeCatalog } from './catalog-repository.js';
 import {
   counts,
   datasetHash,
@@ -8,9 +8,9 @@ import {
   sha,
   canonical,
   type Dataset,
-} from './catalog-model';
-import { diffCatalog } from './diff';
-import { SafeError } from './errors';
+} from './catalog-model.js';
+import { diffCatalog } from './diff.js';
+import { SafeError } from './errors.js';
 
 export const activeStates = [
   'queued',
