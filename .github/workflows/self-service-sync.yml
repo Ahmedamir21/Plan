@@ -1,45 +1,44 @@
-name: Self-Service Draft Sync
-
+name: Read-only Self-Service Catalog Sync
+run-name: Catalog sync ${{ inputs.run_id }}
 on:
   workflow_dispatch:
     inputs:
-      course_codes:
-        description: 'Comma-separated course codes for this safe test (example: CSAI 201,MATH 105)'
+      run_id:
+        description: 'UUID of the queued run created by the protected Plan admin API'
         required: true
-        default: 'CSAI 201'
         type: string
-
 permissions:
   contents: read
-
+concurrency:
+  group: plan-read-only-self-service
+  cancel-in-progress: false
 jobs:
-  fetch-draft:
-    runs-on: ubuntu-latest
+  collect:
+    if: github.repository == 'Ahmedamir21/Plan'
+    runs-on: ubuntu-24.04
+    environment: self-service-sync
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: 22
-
-      - name: Install scraper dependency
-        working-directory: sync
-        run: npm install --no-audit --no-fund
-
-      - name: Install Chromium
-        working-directory: sync
-        run: npx playwright install --with-deps chromium
-
-      - name: Fetch Self-Service into Planora Draft
-        run: node sync/self-service-sync.mjs
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install pinned worker dependencies
+        run: npm --prefix app ci
+      - name: Claim lease, read approved catalog, validate and stage
+        run: npm --prefix app run sync:worker
         env:
-          PLANORA_COURSE_CODES: ${{ inputs.course_codes }}
+          PLANORA_SYNC_RUN_ID: ${{ inputs.run_id }}
+          PLANORA_SELF_SERVICE_ENABLED: ${{ vars.PLANORA_SELF_SERVICE_ENABLED }}
+          PLANORA_TERM_KEY: ${{ vars.PLANORA_TERM_KEY }}
+          DATABASE_URL: ${{ secrets.PLANORA_WORKER_DATABASE_URL }}
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+          SELF_SERVICE_CATALOG_TOKEN: ${{ secrets.SELF_SERVICE_CATALOG_TOKEN }}
           SELF_SERVICE_USERNAME: ${{ secrets.SELF_SERVICE_USERNAME }}
           SELF_SERVICE_PASSWORD: ${{ secrets.SELF_SERVICE_PASSWORD }}
-          SELF_SERVICE_RESULTS_SELECTOR: ${{ secrets.SELF_SERVICE_RESULTS_SELECTOR }}
-          SELF_SERVICE_SEARCH_SELECTOR: ${{ secrets.SELF_SERVICE_SEARCH_SELECTOR }}
-          PLANORA_SYNC_INGEST_URL: ${{ secrets.PLANORA_SYNC_INGEST_URL }}
-          PLANORA_SYNC_INGEST_SECRET: ${{ secrets.PLANORA_SYNC_INGEST_SECRET }}
+      # No screenshots, traces, cookies, HTML, raw response bodies or private artifacts.
+      # The workflow never publishes. A verified admin approves the staged SQL proposal.

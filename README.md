@@ -11,7 +11,7 @@
 <br/>
 
 <a href="https://zc-planora.vercel.app/">
-  <img src="https://img.shields.io/badge/OPEN_LIVE_PLANNER-Planora-668BCC?style=for-the-badge&labelColor=161A23" alt="Open Live Planner" />
+  <img src="https://img.shields.io/badge/REFERENCE_SITE-Planora-668BCC?style=for-the-badge&labelColor=161A23" alt="Open historical reference site" />
 </a>
 
 <br/><br/>
@@ -31,6 +31,10 @@
 </div>
 
 ---
+
+> **Repository scope:** this upgrade changes **Ahmedamir21/Plan only**. Historical Planora site links are read-only references, not proof of this repository's current deployment. Production SQL cutover requires separate verified setup and explicit approval; live university sync and student email remain disabled by default.
+>
+> Start with the [pre-edit audit](docs/REPOSITORY_AUDIT.md), [SQL setup / safe rollback](docs/SQL_SETUP.md), [current acceptance evidence](docs/PR2_ACCEPTANCE.md), [sync safety contract](sync/README.md), and [security limits](docs/SECURITY.md).
 
 ## Table of Contents
 
@@ -68,7 +72,7 @@ It can:
 - share a schedule through a link or image;
 - and provide an AI-assisted schedule workflow grounded in the planner's own course data.
 
-> **Live application (current address):** https://zc-planora.vercel.app/
+> **Historical reference site (deployment not verified):** https://zc-planora.vercel.app/
 
 > **Independent student project:** Planora is not an official university service. Confirm all registration details in Self-Service.
 
@@ -76,7 +80,7 @@ It can:
 
 > **Brand assets:** [Planora logo](Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/public/planora-logo.svg) · [App icon](Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/public/icons/planner-icon.svg)
 
-> **Course data last verified:** **September 24, 2026**
+> **Preserved fixture verification date:** **September 24, 2026**
 
 > **Reporting an error:** Select **⚑ Report** beside a course or **Report an issue** in the footer. Choose the incorrect fields (name, instructor, time, room, section, credits, or other) and explain the problem. Reports go to the private admin inbox without a GitHub account; **Cancel** closes the form without sending anything. Admins review Self-Service separately and record whether a correction is needed. Reports are not official university tickets. Optional no-domain email alerts can be configured through Google Apps Script (see `docs/REPORT_EMAIL.md`); automatic Self-Service checks are not connected.
 
@@ -381,7 +385,7 @@ A shared planner state can include information such as:
 - schedule preferences;
 - display filters.
 
-When a valid shared URL is opened, its state takes priority over stale local state so the recipient sees the intended schedule.
+A shared URL opens an explicit preview and does not overwrite the existing saved plan or locks until the user chooses to save it. New v6 links retain exact meeting facts; older positional links show a section-verification caution. Catalog updates preserve well-formed old meeting keys, keep a raw local backup, and warn about affected selected sections/new overlaps without changing a university registration.
 
 The planner also supports schedule-image export for easier sharing outside the app.
 
@@ -390,49 +394,22 @@ The planner also supports schedule-image export for easier sharing outside the a
 ## Architecture
 
 ```mermaid
-flowchart TD
-    USER["Student Browser"]
-
-    subgraph FRONTEND["React Planner"]
-      UI["Planner UI"]
-      DATA["Fall 2026 Course Data"]
-      PICKS["Section / Pick State"]
-      ENGINE["Conflict + Combination Engine"]
-      BEST["Best Schedule Engine"]
-      SHARE["Share / Export"]
-    end
-
-    subgraph AI["Schedule Assistant"]
-      API["Vercel Serverless API"]
-      GEMINI["Google Gemini"]
-      VALIDATE["Client-side Proposal Validation"]
-    end
-
-    USER --> UI
-    DATA --> UI
-    UI <--> PICKS
-    PICKS --> ENGINE
-    ENGINE --> BEST
-    UI --> SHARE
-
-    UI -->|"planner context"| API
-    API --> GEMINI
-    GEMINI -->|"structured proposal"| API
-    API --> UI
-    UI --> VALIDATE
-    VALIDATE -->|"confirmed valid changes"| PICKS
+flowchart LR
+    SQL["Normalized PostgreSQL"] --> DAL["Server-only SQL DAL / API"]
+    DAL --> UI["Existing React planner"]
+    UI --> LOCAL["Local choices, deterministic engine, sharing and impact warnings"]
+    ADMIN["Existing authenticated admin"] --> JOB["Queued SQL lease + fixed Plan workflow"]
+    JOB --> READER["Approved academic-only GET reader — disabled pending verification"]
+    READER --> REVIEW["Staged diff / explicit admin review"]
+    REVIEW --> SQL
+    SQL --> HISTORY["Committed public academic history"]
+    SQL --> OUTBOX["Optional consent-based email outbox — disabled by default"]
+    UI --> AI["Optional existing server-side schedule assistant"]
 ```
 
-### Design principle
+PostgreSQL is the only live academic source. The original JSON files are preserved import/test fixtures, not bundled runtime data. Redis retains nonacademic reports, feedback, login limits and legacy security/history. No browser database credentials, no silent JSON fallback, and no personal schedule upload to the source agent. The AI assistant's existing opt-in context flow is separate. SQL publication, snapshot, audit and notification outbox commit atomically after review.
 
-The architecture intentionally separates:
-
-- **course data**;
-- **deterministic scheduling logic**;
-- **UI state**;
-- **AI interpretation**.
-
-The AI can interpret a student's request, but deterministic planner code remains responsible for deciding whether a proposed schedule change is actually valid.
+The deterministic scheduler, UI design, nested directories and Vercel `app/` wrapper remain. See [architecture and operator checklist](docs/SQL_SETUP.md).
 
 ---
 
@@ -448,7 +425,9 @@ The AI can interpret a student's request, but deterministic planner code remains
 | AI | Google Gemini |
 | AI API | Vercel Serverless Function |
 | Deployment | Vercel |
-| State Persistence | Browser Local Storage |
+| Academic Data | Server-only PostgreSQL / node-postgres |
+| State Persistence | Browser Local Storage; local pre-update backups |
+| Private Operational Storage | Existing Redis reports/feedback/login limits |
 | Testing | Custom engine harness + SSR smoke tests + jsdom UI tests |
 
 ---
@@ -458,7 +437,7 @@ The AI can interpret a student's request, but deterministic planner code remains
 The Vercel project uses `app/` as its root. The planner package remains in its original nested directory so its build paths and deployment settings continue to work.
 
 ```text
-Planora/
+Plan/
 ├── .github/workflows/planner-ci.yml
 ├── README.md
 ├── assets/
@@ -490,7 +469,7 @@ Planora/
                     │   ├── components/
                     │   ├── data/
                     │   ├── lib/
-                    │   ├── semester/       # Four current JSON datasets
+                    │   ├── semester/       # Preserved migration/test fixtures
                     │   ├── utils/
                     │   ├── App.tsx
                     │   ├── index.css
@@ -510,136 +489,55 @@ For each remaining directory and file group, see the [project map](docs/PROJECT_
 
 ## Local Development
 
-### Prerequisites
-
-Use a Node.js version compatible with the current Vite toolchain:
-
-```text
-Node.js ^20.19.0 or >=22.12.0
-```
-
-### Clone the repository
+Use Node **22** and locked dependencies. Clone only the target repository:
 
 ```bash
-git clone https://github.com/Ahmedamir21/Planora.git
-cd Planora
+git clone https://github.com/Ahmedamir21/Plan.git
+cd Plan
+P='Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail'
+npm --prefix app ci
+npm --prefix sync ci
+npm --prefix "$P" ci
+npm --prefix app run dev:seed
+PLANORA_LOCAL_DB=true npm --prefix app run dev
+# In a second terminal, with P set as above:
+npm --prefix "$P" run dev
 ```
 
-### Open the planner package
-
-```bash
-cd "Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail"
-```
-
-### Install and run
-
-```bash
-npm install
-npm run dev
-```
-
-Vite will start the local frontend development server.
-
-### Production build
-
-```bash
-npm run build
-```
-
-The production build is generated under:
-
-```text
-dist/
-```
-
-### Preview the production build
-
-```bash
-npm run preview
-```
-
----
+This uses isolated local PostgreSQL WASM fixtures and a same-origin API proxy. It does not start a university job, send email or provide default admin credentials. A production build is `npm --prefix app run build`; generated files are ignored. See [full local/setup instructions](docs/SQL_SETUP.md).
 
 ## Testing
 
-The project includes multiple validation layers.
-
 ```bash
-npm run test:harness
+npm --prefix app run typecheck
+npm --prefix app test
+npm --prefix sync run check
+npm --prefix sync test
+npm --prefix "$P" run typecheck
+npm --prefix "$P" run build
+npm --prefix app run test:e2e
+for suite in test:platform test:data test:assistant test:admin test:completeness test:admin-ui test:import test:patch test:patch-ui test:english test:english-import test:audit test:ssr test:ui test:harness test:catalog test:sync-ui test:notifications-ui test:production-ui; do npm --prefix "$P" run "$suite" || exit 1; done
 ```
 
-Core scheduling engine, combinations, conflict behavior, persistence, sharing, and preference checks.
-
-```bash
-npm run test:ssr
-```
-
-Full-app server-side rendering smoke test.
-
-```bash
-npm run test:ui
-```
-
-Real-DOM UI tests powered by jsdom.
-
-A useful pre-deployment check is:
-
-```bash
-npm run test:harness
-npm run test:ssr
-npm run test:ui
-npm run build
-```
-
----
+Original engine/data/UI/import/admin regressions remain. New tests exercise SQL roundtrip/roles/publication rollback, source pagination/failure safety, local saved-key preservation/conflicts, sync UI, double opt-in/outbox/retry/privacy and the actual built student JavaScript. CI adds a disposable PostgreSQL 16 service; local tests default to isolated PGlite. Never point tests at production. Production audits are blocking; the known unpatched dev-only tooling chain is documented in [security notes](docs/SECURITY.md).
 
 ## Deployment
 
-The live project is deployed on **Vercel**.
+Vercel root remains **`app`** with both student and admin builds. Keep the existing project's outside-root build support for the unchanged nested planner. **Confirm the actual project belongs to Ahmedamir21/Plan**; do not assume the historical reference site or a similarly named Planora project is the target.
 
-### Production wrapper
+Production requires the normalized schema, validated reviewed import (including any newer legacy Redis live overrides), restricted runtime DB login, verified TLS, private admin/Redis configuration and a preview review. The build is blocked without `PLANORA_SQL_CUTOVER_APPROVED=true` and core configuration. It never migrates/seeds/enables a worker or sends email automatically. The optional assistant continues to require its private `GEMINI_API_KEY`.
 
-The Vercel project uses:
+The owner-authorized [Plan-only Preview setup runner](docs/PREVIEW_SETUP.md) can provision the isolated SQL schema and verify the actual deployment once private access is configured. No successful cloud deployment is claimed without its evidence.
 
-```text
-Root Directory: app
-```
-
-The wrapper's build script:
-
-1. installs dependencies in the nested planner package;
-2. runs the planner's Vite production build;
-3. copies the generated `dist/` into `app/dist`.
-
-`app/vercel.json` also registers:
-
-```text
-api/assistant.ts
-```
-
-as the server-side Schedule Assistant endpoint.
-
-### Required environment variable
-
-The AI endpoint expects:
-
-```text
-GEMINI_API_KEY
-```
-
-This value belongs in Vercel Environment Variables and must never be committed to the repository or exposed in client code.
-
-### Live deployment
-
-**https://zc-planora.vercel.app/**
+Follow [SQL cutover and rollback](docs/SQL_SETUP.md), [admin workflow](docs/ADMIN_PANEL.md), [source-worker contract](sync/README.md) and [optional email](docs/NOTIFICATIONS.md). Database provisioning, real source access, real email and deployment are not claimed by a successful fixture build/test.
 
 ---
 
 ## Data Accuracy & Limitations
 
-The planner uses a manually compiled Fall 2026 dataset.
+The initial SQL import preserves the manually compiled Fall 2026 fixture dataset. Subsequent reviewed SQL publications supply live academic corrections.
 
-It is **not connected to the university registration backend** and does not automatically receive Self-Service changes.
+It never changes university registration. A contract-gated, read-only catalog worker is implemented, but no authorized live university endpoint/login was verified; the shipped contract blocks real synchronization. A completed unchanged check is not invented when the source cannot be verified.
 
 Therefore:
 
@@ -672,7 +570,7 @@ It does **not** ask for or intentionally store:
 - GPA value;
 - Self-Service credentials.
 
-Schedule Assistant requests include planner context required to answer the student's scheduling question. API credentials remain server-side.
+Schedule Assistant requests include planner context required to answer the student's scheduling question. API credentials remain server-side. Optional academic email stores only an explicitly supplied address, consent and separately chosen course interests, requires verification, and supports unsubscribe. It is disabled by default. Local impact checks never send the saved plan to the sync agent.
 
 ---
 
@@ -695,9 +593,9 @@ For course-data corrections, include the source used to verify the updated secti
 
 ## Admin workspace
 
-The [admin workspace](https://zc-planora.vercel.app/admin.html) has two separate accounts and an attributed activity history in Upstash Redis. Admins can inspect reports and feedback, edit one course's verified fields or import sections into a private draft, compare changes, validate the semester and undo the last saved draft. A draft never publishes itself; the explicit Save & publish action in the course editor updates the public catalog with validation and history. The CSV importer includes a downloadable blank template and checks repeated sections. The login uses an eye button to show or hide the password. Sign-in reads one private password hash for each account from Vercel Production environment variables. Replacing the hash replaces that account's working password; the code has no fallback or default password. See [admin setup](docs/ADMIN_PANEL.md). No passwords or hashes belong in this repository.
+The existing `/admin.html` page retains its two server-verified accounts, course editor, private imports/previews, reports/feedback and review flow. Academic drafts, publication history and snapshots now use SQL; nonacademic Redis history/inboxes remain. Its sync panel adds a protected queued worker, complete run states/history, diff/removal review, snapshot recovery and optional outbox status. There is no public role toggle or default password.
 
-New semester content lives in four JSON files under `src/semester/` (`semester.json`, `courses.json`, `majors.json` and `sch.json`). Follow the [semester rollover guide](docs/SEMESTER_ROLLOVER.md) and run the data validator and full test suite before publishing. The AI assistant previews schedule changes against the actual selected meetings and rejects a proposed final schedule with conflicts or locked-section changes.
+Use [admin setup](docs/ADMIN_PANEL.md) and [semester rollover](docs/SEMESTER_ROLLOVER.md). Editing the preserved JSON fixtures no longer publishes academic data. The SQL cutover, real source connector and live mail must each be verified and authorized separately.
 
 ## Presentation
 

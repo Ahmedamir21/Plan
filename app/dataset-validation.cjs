@@ -19,8 +19,8 @@ function validateDataset({ semester, courses, sch, majors }) {
     const label = course.code || course.id || `Course ${index + 1}`;
     check(typeof course.id === 'string' && course.id.trim() && !ids.has(course.id), `${label}: missing or duplicate course ID.`);
     ids.add(course.id);
-    check(typeof course.code === 'string' && course.code.trim() && !codes.has(course.code.toUpperCase()), `${label}: missing or duplicate course code.`);
-    if (typeof course.code === 'string') codes.add(course.code.toUpperCase());
+    check(typeof course.code === 'string' && course.code.trim() && !codes.has(`${index < (courses?.length || 0) ? 'courses' : 'sch'}:${course.code.toUpperCase()}`), `${label}: missing or duplicate course code.`);
+    if (typeof course.code === 'string') codes.add(`${index < (courses?.length || 0) ? 'courses' : 'sch'}:${course.code.toUpperCase()}`);
     check(typeof course.name === 'string' && course.name.trim(), `${label}: missing course name.`);
     check(Number.isInteger(course.c) && course.c >= 1 && course.c <= 7, `${label}: palette index must be 1–7.`);
     check(course.credits === undefined || Number.isFinite(course.credits) && course.credits >= 0 && course.credits <= 21, `${label}: invalid credits.`);

@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { rateLimited, storageConfigured } from './admin-store';
-import { jsonRequest, sameOrigin } from './security';
+import { rateLimited, storageConfigured } from '../server/admin-store.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
 
 
 const ASSISTANT_RESPONSE_SCHEMA = {
@@ -28,13 +28,13 @@ const ASSISTANT_RESPONSE_SCHEMA = {
   required: ['text', 'constraintsAdd', 'lockActions', 'proposal'],
 };
 
-function clientKey(req) {
+function clientKey(req: any) {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded) return forwarded.split(',')[0].trim();
   return req.socket?.remoteAddress || 'unknown';
 }
 
-function browserId(req, res, secret) {
+function browserId(req: any, res: any, secret: string) {
   const raw = String(req.headers?.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith('planora_assistant='))?.slice('planora_assistant='.length);
   const [id, signature, extra] = (raw || '').split('.');
   if (!extra && /^[0-9a-f-]{36}$/.test(id || '') && typeof signature === 'string') {
@@ -157,7 +157,7 @@ export default async function handler(req: any, res: any) {
     return res.status(503).json({ error: 'Assistant rate limiting is temporarily unavailable.' });
   }
 
-  let body = {};
+  let body: any = {};
   try {
     body = req.body && typeof req.body === 'object' ? req.body : {};
   } catch {
@@ -225,8 +225,8 @@ export default async function handler(req: any, res: any) {
   ].join('\n');
 
   const safeHistory = history
-    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
-    .map((m) => ({
+    .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
+    .map((m: any) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.text.slice(0, 1200) }],
     }));

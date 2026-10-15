@@ -1,87 +1,117 @@
 name: Planner CI
-
 on:
   push:
-    branches: [main, 'planora-*']
+    branches: [main, 'planora-*', 'arena/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
-
+    inputs:
+      preview_setup_ack:
+        description: 'Optional: type Plan isolated preview only to run the protected Plan Preview setup'
+        required: false
+        default: ''
+        type: string
+permissions:
+  contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail
-
+    if: github.repository == 'Ahmedamir21/Plan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: planora_test
+          POSTGRES_USER: postgres
+          # Disposable isolated test credential, never a real database or university secret.
+          POSTGRES_PASSWORD: planora_test_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d planora_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:planora_test_only@localhost:5432/planora_test
+      DATABASE_SSL: disable
+      PLANORA_EMAIL_MODE: disabled
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
           cache: npm
-          cache-dependency-path: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/package-lock.json
+          cache-dependency-path: |
+            app/package-lock.json
+            sync/package-lock.json
+            Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/package-lock.json
+      - name: Install locked packages
+        run: |
+          npm --prefix app ci
+          npm --prefix sync ci
+          npm --prefix Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail ci
+      - name: Server checks and real PostgreSQL integration tests
+        run: npm --prefix app run typecheck && npm --prefix app test
+      - name: Read-only agent tests (synthetic data only)
+        run: npm --prefix sync run check && npm --prefix sync test
+      - name: Production dependency audits
+        run: |
+          npm --prefix app audit --omit=dev --audit-level=high
+          npm --prefix sync audit --omit=dev --audit-level=high
+          npm --prefix Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail audit --omit=dev --audit-level=high
+      - name: Planner typecheck, build and all regression suites
+        working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail
+        run: |
+          npm run typecheck
+          npm run build
+          for script in test:platform test:data test:assistant test:admin test:completeness test:admin-ui test:import test:patch test:patch-ui test:english test:english-import test:audit test:ssr test:ui test:harness test:catalog test:sync-ui test:notifications-ui test:production-ui; do npm run "$script"; done
+      - name: Controlled browser/API/SQL new-section and changed-time acceptance
+        run: npm --prefix app run test:e2e
+      - name: Full tooling audit (known unpatched dev-only braces advisory; see SECURITY)
+        working-directory: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Self-Service scraper syntax check
-        working-directory: .
-        run: node --check sync/self-service-sync.mjs
-
-      - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
-
-      - name: Full dependency audit report
-        run: npm audit --audit-level=high --json > npm-audit.json || true
-
-      - name: Upload dependency audit report
-        uses: actions/upload-artifact@v4
+  preview_acceptance:
+    # Never runs on PR/push or main; this existing workflow can be dispatched on the PR branch.
+    if: github.repository == 'Ahmedamir21/Plan' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/arena/cd36c549-plan' && inputs.preview_setup_ack == 'Plan isolated preview only'
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment: plan-preview
+    timeout-minutes: 25
+    concurrency:
+      group: plan-pr-2-isolated-preview
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          name: npm-audit-report
-          path: Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/npm-audit.json
-          if-no-files-found: error
-
-      - name: TypeScript check
-        run: npm run typecheck
-
-      - name: Production build
-        run: npm run build
-
-      - name: Platform feature tests
-        run: npm run test:platform
-
-      - name: Data integrity tests
-        run: npm run test:data
-
-      - name: Assistant feature tests
-        run: npm run test:assistant
-
-      - name: Admin login tests
-        run: npm run test:admin
-      - name: Published data completeness report
-        run: npm run test:completeness
-
-      - name: Admin course search tests
-        run: npm run test:admin-ui
-
-      - name: Times and rooms CSV import tests
-        run: npm run test:patch && npm run test:patch-ui
-
-      - name: Optional English course readiness
-        run: npm run test:english && npm run test:english-import
-
-      - name: Scheduling engine audit
-        run: npm run test:audit
-
-      - name: SSR smoke test
-        run: npm run test:ssr
-
-      - name: UI tests
-        run: npm run test:ui
-
-      - name: Core scheduler harness
-        run: npm run test:harness
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm --prefix app ci
+      - name: Verify scope, initialize isolated services, deploy Preview, run deployed smoke
+        run: npm --prefix app run preview:setup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN_PREVIEW_ACK: ${{ inputs.preview_setup_ack }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          PLAN_PREVIEW_VERCEL_PROJECT_ID: ${{ vars.PLAN_PREVIEW_VERCEL_PROJECT_ID }}
+          PLAN_PREVIEW_DATABASE_OWNER_URL: ${{ secrets.PLAN_PREVIEW_DATABASE_OWNER_URL }}
+          PLAN_PREVIEW_DATABASE_RUNTIME_URL: ${{ secrets.PLAN_PREVIEW_DATABASE_RUNTIME_URL }}
+          PLAN_PREVIEW_REDIS_URL: ${{ secrets.PLAN_PREVIEW_REDIS_URL }}
+          PLAN_PREVIEW_REDIS_TOKEN: ${{ secrets.PLAN_PREVIEW_REDIS_TOKEN }}
+          PLAN_PREVIEW_ADMIN_PASSWORD: ${{ secrets.PLAN_PREVIEW_ADMIN_PASSWORD }}
+          PLAN_PREVIEW_SECOND_ADMIN_PASSWORD: ${{ secrets.PLAN_PREVIEW_SECOND_ADMIN_PASSWORD }}
+          PLANORA_SQL_CUTOVER_APPROVED: 'false'
+          PLANORA_SELF_SERVICE_ENABLED: 'false'
+          PLANORA_EMAIL_MODE: disabled
+          PLANORA_EMAIL_LIVE_APPROVED: 'false'
+          PLANORA_SECURITY_MAIL_ENABLED: 'false'

@@ -11,6 +11,8 @@ export type MeetingType = 'Lecture' | 'Lab' | 'Tutorial';
  * never overlap while a 3:00–4:59 PM meeting (900 → 1020) does overlap it.
  */
 export interface Meeting {
+  /** Optional verified source identity; never inferred from a display label. */
+  sourceId?: string;
   type: MeetingType;
   sec: string;
   day: Day;
@@ -31,6 +33,7 @@ export interface Instructor {
 }
 
 export interface Course {
+  sourceId?: string;
   id: string;
   code: string;
   name: string;

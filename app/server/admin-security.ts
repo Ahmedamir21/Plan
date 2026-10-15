@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
-import { redis } from './admin-store';
+import { redis } from './admin-store.js';
 
 export const SECURITY_KEY = 'planora:admin:security:v1';
 export type SecurityEvent = { id: string; at: string; action: 'login_success' | 'login_failure' | 'login_blocked'; ip: string; device: string; claimedUsername: string; adminName?: string };

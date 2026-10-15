@@ -1,0 +1,12 @@
+{
+  "format": "planora.catalog-page.v1",
+  "term": "fixture-2026-main",
+  "snapshot": "fixture-snapshot-1",
+  "page": 1,
+  "pageCount": 1,
+  "totalCourses": 2,
+  "totalSections": 2,
+  "complete": true,
+  "courses": [{ "id":"demo101","code":"DEMO 101","name":"Synthetic Course","c":1,"credits":3,"instructors":[{"name":"Fixture Teacher","lectures":[{"type":"Lecture","sec":"01","day":"Sun","start":600,"end":660,"room":"Test Room"}],"labs":[],"tutorials":[]}] }],
+  "sch": [{ "id":"sample101","code":"SAMPLE 101","name":"Synthetic Elective","c":7,"credits":2,"instructors":[{"name":"Fixture Teacher","lectures":[{"type":"Lecture","sec":"01","day":"Mon","start":600,"end":660,"room":"Test Room"}],"labs":[],"tutorials":[]}] }]
+}

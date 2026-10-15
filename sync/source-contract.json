@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "approved": false,
+  "origin": "https://sisselfservice.zewailcity.edu.eg",
+  "catalogPath": "",
+  "term": "fall-2026-main",
+  "authentication": "bearer",
+  "format": "planora.catalog-page.v1",
+  "reviewReference": "UNVERIFIED: no authorized dedicated catalog endpoint has been supplied."
+}

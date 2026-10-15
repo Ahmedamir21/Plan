@@ -1,4 +1,4 @@
-import { redis } from './admin-store';
+import { redis } from './admin-store.js';
 
 export const REPORT_EMAIL_STATUS = 'planora:reports:email:v1';
 

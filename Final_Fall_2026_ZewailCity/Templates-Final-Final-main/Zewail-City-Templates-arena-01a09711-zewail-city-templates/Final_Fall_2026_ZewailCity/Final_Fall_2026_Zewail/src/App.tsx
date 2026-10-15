@@ -60,8 +60,11 @@ import { Toast, type ToastState } from './components/Toast';
 import { ScheduleAssistant, type AssistantLockAction, type AssistantProposal, type AssistantProposalPreview } from './components/ScheduleAssistant';
 import { ShareScheduleImage } from './components/ShareScheduleImage';
 import { InstallAppButton } from './components/InstallAppButton';
+import { EmailNotifications } from './components/EmailNotifications';
+import { CatalogUpdates } from './components/CatalogUpdates';
+import { ScheduleImpact } from './components/ScheduleImpact';
 import { AppStatus } from './components/AppStatus';
-import { COURSE_DATA_LAST_VERIFIED } from './data/meta';
+import { courseDataLastVerified } from './data/meta';
 import { CREATOR_CREDIT, DOCUMENT_DESCRIPTION, DOCUMENT_TITLE, LEGACY_UNTAGGED_SEMESTER_KEY, SEMESTER_CONFIG, TERM_SESSION_LABEL, TERM_SESSION_PAREN_LABEL } from './config/semester';
 import {
   isComponentLocked,
@@ -123,7 +126,8 @@ export default function App() {
   // Both sources are read exactly once. URL state always wins over Local Storage, so opening
   // a shared link never gets clobbered by a stale saved schedule.
   const [sharedOnLoad] = useState(() => readScheduleFromLocation());
-  const [savedOnLoad] = useState(() => (sharedOnLoad ? null : loadAppState()));
+  const [savedOnLoad] = useState(() => { const local=loadAppState();return sharedOnLoad?null:local; });
+  const [saveSharedPlan,setSaveSharedPlan] = useState(!sharedOnLoad);
 
   const urlState = sharedOnLoad;
   const savedState = savedOnLoad;
@@ -163,11 +167,11 @@ export default function App() {
 
   const [picks, setPicks] = useState<PickState>(() => {
     if (urlState && MAJOR_BY_ID[urlState.majorId]) {
-      return trimPicksToMajor(urlState.picks, urlState.majorId);
+      return urlState.legacySections ? trimPicksToMajor(urlState.picks, urlState.majorId) : urlState.picks;
     }
 
     if (savedState?.picks) {
-      return trimPicksToMajor(savedState.picks, savedState.majorId);
+      return savedState.picks; // Keep historical/retired choices; warnings explain unresolved sections.
     }
 
     return {};
@@ -262,8 +266,8 @@ export default function App() {
       setPlannerLocks(normalized);
       return;
     }
-    savePlannerLocks(normalized);
-  }, [plannerLocks, picks]);
+    if(saveSharedPlan) savePlannerLocks(normalized);
+  }, [plannerLocks, picks, saveSharedPlan]);
 
   useEffect(() => {
     try {
@@ -378,6 +382,7 @@ export default function App() {
   /* ---------------- Local Storage persistence (URL state always wins on load) ---------------- */
 
   useEffect(() => {
+    if(!saveSharedPlan)return;
     saveAppState({
       majorId,
       yearId,
@@ -390,6 +395,7 @@ export default function App() {
       preferences,
     });
   }, [
+    saveSharedPlan,
     majorId,
     yearId,
     creditCap,
@@ -1228,7 +1234,7 @@ export default function App() {
   const assistantContext = useMemo<Record<string, unknown>>(
     () => ({
       term: TERM_SESSION_LABEL,
-      dataLastVerified: COURSE_DATA_LAST_VERIFIED,
+      dataLastVerified: courseDataLastVerified(),
       major: major ? { id: major.id, title: major.title, subtitle: major.subtitle } : null,
       year: yearPlan ? { id: yearPlan.id, label: yearPlan.label } : null,
       creditLimit: effectiveCap,
@@ -1403,6 +1409,10 @@ export default function App() {
   return (
     <div className="min-h-screen pb-14">
       <AppStatus />
+      {sharedOnLoad&&<aside className="panel mx-auto my-3 max-w-7xl p-4 no-print"><h2 className="font-semibold">Shared planner preview</h2><p className="mt-1 text-sm">{saveSharedPlan?'You chose to save this shared plan on this device.':'Your existing local schedule is untouched. Changes to this shared preview are not saved until you choose to save them.'} {sharedOnLoad.legacySections?'This older link uses section positions, not stable identities. Verify every selected section against the current catalog.':''}</p>{!saveSharedPlan&&<button className="btn mt-3 px-3 py-2 text-sm" onClick={()=>{if(window.confirm('Replace the current local plan with this shared preview? This does not change any university registration.'))setSaveSharedPlan(true);}}>Save this shared plan on my device</button>}</aside>}
+      <ScheduleImpact picks={picks} snapshot={savedOnLoad?.selectedSnapshot} />
+      <CatalogUpdates />
+      <EmailNotifications />
       <div className="mx-auto max-w-[1560px] px-3 py-4 sm:px-6 sm:py-6">
         <header className="panel mb-3 flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
           <div>
@@ -1971,7 +1981,7 @@ export default function App() {
 
           <span>
             Course data verified:{' '}
-            {new Date(`${COURSE_DATA_LAST_VERIFIED}T12:00:00`).toLocaleDateString('en-US', {
+            {new Date(`${courseDataLastVerified()}T12:00:00`).toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
               year: 'numeric',

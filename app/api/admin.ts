@@ -1,21 +1,14 @@
 import { createHash, createHmac, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { draftKey, liveKey, HISTORY_KEY, rateLimited, redis, saveWithHistory, saveLive, undoLive, undoWithHistory, storageConfigured } from './admin-store';
-import { isCatalogFile } from './catalog';
-import { jsonRequest, sameOrigin } from './security';
-import { validateDataset } from '../dataset-validation.cjs';
-import publishedSemester from '../../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/src/semester/semester.json';
-import publishedCourses from '../../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/src/semester/courses.json';
-import publishedMajors from '../../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/src/semester/majors.json';
-import publishedSch from '../../Final_Fall_2026_ZewailCity/Templates-Final-Final-main/Zewail-City-Templates-arena-01a09711-zewail-city-templates/Final_Fall_2026_ZewailCity/Final_Fall_2026_Zewail/src/semester/sch.json';
-import { ADMIN_ACCOUNTS } from '../admin-accounts';
-import { REPORTS_DATA, REPORTS_KEY } from './reports';
-import { REPORT_EMAIL_STATUS } from './report-email';
-import { FEEDBACK_DATA, FEEDBACK_IDS, feedbackSummary, type Feedback } from './feedback';
-import { SECURITY_KEY, clientIp, securityEmail, securityEvent } from './admin-security';
-import { SYNC_BACKUPS_KEY, SYNC_DRAFT_KEY, SYNC_STATUS_KEY, discardSyncDraft, publishSyncDraft, restoreSyncBackup, stageSyncDraft, syncBackupKey } from './sync-store';
+import { HISTORY_KEY, rateLimited, redis, storageConfigured } from '../server/admin-store.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
+import { ADMIN_ACCOUNTS } from '../admin-accounts.js';
+import { REPORTS_DATA, REPORTS_KEY } from './reports.js';
+import { REPORT_EMAIL_STATUS } from '../server/report-email.js';
+import { FEEDBACK_DATA, FEEDBACK_IDS, feedbackSummary, type Feedback } from './feedback.js';
+import { SECURITY_KEY, clientIp, securityEmail, securityEvent } from '../server/admin-security.js';
+import { adminCatalog, academicHistory } from '../server/admin-catalog.js';
 
 const COOKIE = 'planora_admin';
-const FILES = ['semester.json', 'courses.json', 'majors.json', 'sch.json'] as const;
 const UPDATE_REPORT = `local old = redis.call('HGET', KEYS[1], ARGV[1])
 if not old or old ~= ARGV[2] then return 0 end
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
@@ -53,115 +46,26 @@ function session(req: any, config: NonNullable<ReturnType<typeof configured>>) {
   if (!payload || !signature || extra || !equal(signature, sign(payload, config.secret))) return null;
   try {
     const token = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return Number.isFinite(token.exp) && token.exp > Date.now() ? config.admins.find(a => a.id === token.id) || null : null;
+    return Number.isFinite(token.exp) && token.exp > Date.now() ? config.admins.find(a => a.id === token.id && token.credentialVersion === sha(a.hash)) || null : null;
   } catch { return null; }
-}
-const allowedFile = (name: unknown): name is typeof FILES[number] => typeof name === 'string' && FILES.some(file => file === name);
-const published = { 'semester.json': publishedSemester, 'courses.json': publishedCourses, 'majors.json': publishedMajors, 'sch.json': publishedSch };
-async function combinedDataset(file?: typeof FILES[number], proposed?: string) {
-  const values: Record<string, any> = {};
-  for (const name of FILES) {
-    const content = file === name && proposed !== undefined ? proposed : await redis(['GET', draftKey(name)]);
-    values[name.replace('.json', '')] = content == null ? published[name] : JSON.parse(content);
-  }
-  return validateDataset(values);
-}
-function validData(file: typeof FILES[number], content: string) {
-  if (content.length > 250_000) return 'Dataset is too large.';
-  let value: any;
-  try { value = JSON.parse(content); } catch { return 'Invalid JSON.'; }
-  if (file === 'semester.json') {
-    if (!value || typeof value.key !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.calendarStartDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(value.calendarEndDate || '') || value.calendarStartDate > value.calendarEndDate) return 'Invalid semester config or dates.';
-    return null;
-  }
-  if (!Array.isArray(value)) return 'Dataset must be an array.';
-  const seen = new Set<string>();
-  for (const item of value) {
-    if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) return 'Missing or duplicate ID.';
-    seen.add(item.id);
-    if (file === 'majors.json') {
-      if (!Array.isArray(item.years) || item.years.some((year: any) => !Array.isArray(year.courseIds))) return 'Invalid major/year mapping.';
-    } else {
-      if (!item.code || !item.name || !Array.isArray(item.instructors)) return 'Course is missing required fields.';
-      for (const teacher of item.instructors) {
-        if (typeof teacher.name !== 'string' || !teacher.name.trim()) return 'Instructor name is missing.';
-        for (const group of ['lectures', 'labs', 'tutorials']) {
-          if (!Array.isArray(teacher[group])) return 'Missing meeting group.';
-          for (const meeting of teacher[group]) if (!['Sun', 'Mon', 'Tue', 'Wed', 'Thu'].includes(meeting.day) || !Number.isInteger(meeting.start) || !Number.isInteger(meeting.end) || meeting.start < 0 || meeting.end > 1440 || meeting.start >= meeting.end || typeof meeting.sec !== 'string' || !meeting.sec) return 'Invalid meeting day, time or section.';
-        }
-      }
-    }
-  }
-  return null;
-}
-function changes(before: string, after: string): string[] {
-  try {
-    const previous = JSON.parse(before || 'null'); const next = JSON.parse(after);
-    if (Array.isArray(next)) {
-      const old = new Map((Array.isArray(previous) ? previous : []).map((x: any) => [x.id, JSON.stringify(x)]));
-      const fresh = new Map(next.map((x: any) => [x.id, JSON.stringify(x)]));
-      return [...new Set([...old.keys(), ...fresh.keys()])].filter(id => old.get(id) !== fresh.get(id)).slice(0, 30).map(String);
-    }
-    return Object.keys(next).filter(key => JSON.stringify(previous?.[key]) !== JSON.stringify(next[key])).slice(0, 30);
-  } catch { return ['dataset']; }
 }
 function event(admin: Admin, action: string, options: Record<string, unknown> = {}) {
   return JSON.stringify({ id: randomUUID(), at: new Date().toISOString(), adminId: admin.id, adminName: admin.name, action, ...options });
 }
 
-async function effectiveCatalog() {
-  const [coursesOverride, schOverride] = await Promise.all([
-    redis(['GET', liveKey('courses.json')]), redis(['GET', liveKey('sch.json')]),
-  ]);
-  return {
-    coursesOverride: coursesOverride || '',
-    schOverride: schOverride || '',
-    courses: coursesOverride ? JSON.parse(coursesOverride) : publishedCourses,
-    sch: schOverride ? JSON.parse(schOverride) : publishedSch,
-  };
-}
-function syncCounts(courses: any[], sch: any[]) {
-  const all = [...courses, ...sch];
-  const meetings = all.flatMap(course => Array.isArray(course?.instructors) ? course.instructors : [])
-    .flatMap((teacher: any) => [...(teacher.lectures || []), ...(teacher.labs || []), ...(teacher.tutorials || [])]);
-  return { courses: all.length, sections: meetings.length };
-}
-function syncChangeSummary(beforeCourses: any[], beforeSch: any[], nextCourses: any[], nextSch: any[]) {
-  const before = [...beforeCourses, ...beforeSch];
-  const next = [...nextCourses, ...nextSch];
-  const oldMap = new Map(before.map((course: any) => [course.id, { raw: JSON.stringify(course), code: course.code || course.id }]));
-  const newMap = new Map(next.map((course: any) => [course.id, { raw: JSON.stringify(course), code: course.code || course.id }]));
-  const ids = new Set([...oldMap.keys(), ...newMap.keys()]);
-  const changed: string[] = [], added: string[] = [], removed: string[] = [];
-  ids.forEach(id => {
-    const oldCourse = oldMap.get(id); const newCourse = newMap.get(id);
-    if (!oldCourse && newCourse) added.push(String(newCourse.code));
-    else if (oldCourse && !newCourse) removed.push(String(oldCourse.code));
-    else if (oldCourse?.raw !== newCourse?.raw) changed.push(String(newCourse?.code || oldCourse?.code || id));
-  });
-  const beforeCounts = syncCounts(beforeCourses, beforeSch);
-  const nextCounts = syncCounts(nextCourses, nextSch);
-  return {
-    changedCourses: changed.length, addedCourses: added.length, removedCourses: removed.length,
-    changed: changed.slice(0, 100), added: added.slice(0, 100), removed: removed.slice(0, 100),
-    previousSections: beforeCounts.sections, sections: nextCounts.sections, sectionDelta: nextCounts.sections - beforeCounts.sections,
-  };
-}
-function syncStatus(value: Record<string, unknown>) {
-  return JSON.stringify({ updatedAt: new Date().toISOString(), ...value });
-}
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store, private'); res.setHeader('X-Content-Type-Options', 'nosniff');
   const config = configured();
-  if (!config) return res.status(503).json({ error: 'Set both admin password hashes and the session secret, and connect Upstash Redis to Production in Vercel.' });
+  if (!config) return res.status(503).json({ error: 'Configure the server-side admin password hashes and session secret for this deployment.' });
   if (!['GET', 'POST', 'DELETE'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
   if (req.method !== 'GET' && !sameOrigin(req)) return res.status(403).json({ error: 'Invalid origin' });
   if (req.method === 'POST' && !jsonRequest(req, 300_000)) return res.status(413).json({ error: 'Invalid or oversized JSON request.' });
   const admin = session(req, config);
-  if (req.method === 'GET' && !admin) return res.status(200).json({ authenticated: false });
+  if (req.method === 'GET' && !admin) return res.status(req.query?.action ? 401 : 200).json({ authenticated: false, ...(req.query?.action ? {error:'Sign in again.'}: {}) });
   try {
     if (req.method === 'GET') {
       const action = req.query?.action;
+      if (await adminCatalog(req,res,admin!)) return;
       if (action === 'reports') {
         const rawIds = await redis(['LRANGE', REPORTS_KEY, 0, 499]);
         const rows = rawIds?.length ? await redis(['HMGET', REPORTS_DATA, ...rawIds]) : [];
@@ -177,42 +81,14 @@ export default async function handler(req: any, res: any) {
       }
       if (action === 'history') {
         const page = Math.min(100, Math.max(0, Number(req.query?.page) || 0));
-        const raw = await redis(['LRANGE', HISTORY_KEY, page * 20, page * 20 + 19]);
-        return res.status(200).json({ entries: (raw || []).map((row: string) => JSON.parse(row)) });
+        const raw = await redis(['LRANGE', HISTORY_KEY, 0, (page + 1) * 20 - 1]);
+        const entries = [...(raw || []).map((row: string) => JSON.parse(row)),...await academicHistory((page+1)*20)];
+        entries.sort((a,b) => String(b.at).localeCompare(String(a.at)));
+        return res.status(200).json({ entries: entries.slice(page*20,page*20+20) });
       }
       if (action === 'security') {
         const raw = await redis(['LRANGE', SECURITY_KEY, 0, 199]);
         return res.status(200).json({ entries: (raw || []).map((row: string) => JSON.parse(row)) });
-      }
-      if (action === 'sync_status') {
-        const [rawStatus, rawDraft, backups] = await Promise.all([
-          redis(['GET', SYNC_STATUS_KEY]), redis(['GET', SYNC_DRAFT_KEY]), redis(['LRANGE', SYNC_BACKUPS_KEY, 0, 19]),
-        ]);
-        const draft = rawDraft ? JSON.parse(rawDraft) : null;
-        return res.status(200).json({
-          status: rawStatus ? JSON.parse(rawStatus) : { state: 'Not run', phase: 'idle' },
-          draft: draft ? { ...draft, courses: undefined, sch: undefined } : null,
-          draftRevision: rawDraft ? sha(rawDraft) : '',
-          backups: backups || [],
-        });
-      }
-      if (action === 'sync_backup') {
-        const version = typeof req.query?.version === 'string' ? req.query.version : '';
-        if (!/^v\d{4}-\d{2}-\d{2}-\d{4}(?:-\d{2})?$/.test(version)) return res.status(400).json({ error: 'Invalid backup version.' });
-        const backup = await redis(['GET', syncBackupKey(version)]);
-        if (!backup) return res.status(404).json({ error: 'Backup not found.' });
-        return res.status(200).json({ backup: JSON.parse(backup) });
-      }
-      if (action === 'draft') {
-        if (!allowedFile(req.query?.file)) return res.status(400).json({ error: 'Invalid filename.' });
-        const content = await redis(['GET', draftKey(req.query.file)]);
-        return res.status(200).json({ content, revision: content == null ? '' : sha(content) });
-      }
-      if (action === 'live') {
-        if (!allowedFile(req.query?.file)) return res.status(400).json({ error: 'Invalid filename.' });
-        const content = isCatalogFile(req.query.file) ? await redis(['GET', liveKey(req.query.file)]) : null;
-        const current = content ?? JSON.stringify(published[req.query.file as typeof FILES[number]]);
-        return res.status(200).json({ content: current, revision: sha(current) });
       }
       return res.status(200).json({ authenticated: true, user: { id: admin!.id, name: admin!.name } });
     }
@@ -239,89 +115,15 @@ export default async function handler(req: any, res: any) {
       const signIn = await securityEvent(req, 'login_success', username, candidate.name);
       await redis(['LPUSH', HISTORY_KEY, event(candidate, 'login')]);
       const age = 8 * 60 * 60;
-      const payload = Buffer.from(JSON.stringify({ id: candidate.id, exp: Date.now() + age * 1000 })).toString('base64url');
+      const payload = Buffer.from(JSON.stringify({ id: candidate.id, credentialVersion:sha(candidate.hash), exp: Date.now() + age * 1000 })).toString('base64url');
       res.setHeader('Set-Cookie', cookie(`${payload}.${sign(payload, config.secret)}`, age));
       await securityEmail(signIn);
       return res.status(200).json({ authenticated: true, user: { id: candidate.id, name: candidate.name } });
     }
     if (!admin) return res.status(401).json({ error: 'Sign in again.' });
-    if (body.action === 'sync_stage') {
-      const source = typeof body.source === 'string' ? body.source.trim().slice(0, 240) : '';
-      const expectedRevision = typeof body.expectedSyncRevision === 'string' ? body.expectedSyncRevision : '';
-      const dataset = body.dataset && typeof body.dataset === 'object' ? body.dataset : null;
-      if (!source || !dataset || !Array.isArray(dataset.courses) || !Array.isArray(dataset.sch)) return res.status(400).json({ error: 'Add the fetched courses, SCH data, and a source label.' });
-      const previous = await redis(['GET', SYNC_DRAFT_KEY]) || '';
-      if ((previous ? sha(previous) : '') !== expectedRevision) return res.status(409).json({ error: 'The sync draft changed. Refresh Self-Service Sync before staging again.' });
-      const check = validateDataset({ semester: publishedSemester, majors: publishedMajors, courses: dataset.courses, sch: dataset.sch });
-      if (check.errors.length) {
-        const failedAt = new Date().toISOString();
-        const counts = syncCounts(dataset.courses, dataset.sch);
-        const status = syncStatus({ state: 'Failed', phase: 'validation_failed', startedAt: typeof body.startedAt === 'string' ? body.startedAt : failedAt, finishedAt: failedAt, source, ...counts, errors: check.errors.length, warnings: check.warnings.length });
-        await redis(['SET', SYNC_STATUS_KEY, status]);
-        await redis(['LPUSH', HISTORY_KEY, event(admin, 'sync_rejected', { source, changed: check.errors.slice(0, 10), method: 'Fetched data rejected before Draft; live data unchanged' })]);
-        return res.status(400).json({ error: `Fetched data has ${check.errors.length} blocking validation errors. Live data was not changed.`, errors: check.errors.slice(0, 30) });
-      }
-      const live = await effectiveCatalog();
-      const diff = syncChangeSummary(live.courses, live.sch, dataset.courses, dataset.sch);
-      const warnings = [...check.warnings];
-      const sectionBase = Math.max(1, diff.previousSections);
-      if (Math.abs(diff.sectionDelta) > Math.max(20, Math.ceil(sectionBase * 0.25))) warnings.unshift(`Large section-count change: ${diff.previousSections} → ${diff.sections}. Review before publishing.`);
-      if (diff.addedCourses || diff.removedCourses) warnings.unshift(`Course set changed: +${diff.addedCourses} / -${diff.removedCourses}. Review course mapping before publishing.`);
-      const now = new Date().toISOString();
-      const payload = JSON.stringify({
-        source, fetchedAt: typeof body.fetchedAt === 'string' ? body.fetchedAt : now, stagedAt: now,
-        courses: dataset.courses, sch: dataset.sch, validation: { warnings, summary: check.summary }, changes: diff,
-      });
-      const state = warnings.length ? 'Warning' : 'Success';
-      const status = syncStatus({ state, phase: 'draft_ready', startedAt: typeof body.startedAt === 'string' ? body.startedAt : now, finishedAt: now, source, ...syncCounts(dataset.courses, dataset.sch), warnings: warnings.length });
-      const log = event(admin, 'sync_stage', { source, changed: [`${diff.changedCourses} changed courses`, `${diff.addedCourses} added`, `${diff.removedCourses} removed`, `${diff.sectionDelta >= 0 ? '+' : ''}${diff.sectionDelta} sections`], method: 'Self-Service Sync draft only' });
-      if (await stageSyncDraft(previous, payload, status, log) !== 1) return res.status(409).json({ error: 'The sync draft changed while staging. Refresh and retry.' });
-      return res.status(200).json({ draftRevision: sha(payload), state, warnings, changes: diff, summary: check.summary });
-    }
-    if (body.action === 'sync_discard') {
-      const previous = await redis(['GET', SYNC_DRAFT_KEY]) || '';
-      const expectedRevision = typeof body.expectedSyncRevision === 'string' ? body.expectedSyncRevision : '';
-      if (!previous) return res.status(400).json({ error: 'There is no Self-Service sync draft to discard.' });
-      if (sha(previous) !== expectedRevision) return res.status(409).json({ error: 'The sync draft changed. Refresh before discarding it.' });
-      const status = syncStatus({ state: 'Success', phase: 'discarded', finishedAt: new Date().toISOString() });
-      const log = event(admin, 'sync_discard', { method: 'Discard fetched draft; live data unchanged' });
-      if (await discardSyncDraft(previous, status, log) !== 1) return res.status(409).json({ error: 'The sync draft changed. Refresh and retry.' });
-      return res.status(200).json({ discarded: true });
-    }
-    if (body.action === 'sync_publish') {
-      const previous = await redis(['GET', SYNC_DRAFT_KEY]) || '';
-      const expectedRevision = typeof body.expectedSyncRevision === 'string' ? body.expectedSyncRevision : '';
-      const reason = typeof body.source === 'string' ? body.source.trim().slice(0, 240) : '';
-      if (!previous || sha(previous) !== expectedRevision) return res.status(409).json({ error: 'Reload the latest Self-Service sync draft before publishing.' });
-      if (!reason) return res.status(400).json({ error: 'Add what you verified before publishing this draft.' });
-      const draft = JSON.parse(previous);
-      const check = validateDataset({ semester: publishedSemester, majors: publishedMajors, courses: draft.courses, sch: draft.sch });
-      if (check.errors.length) return res.status(400).json({ error: `Draft has ${check.errors.length} blocking errors.`, errors: check.errors.slice(0, 30) });
-      const live = await effectiveCatalog();
-      const now = new Date();
-      const version = `v${now.getUTCFullYear()}-${String(now.getUTCMonth()+1).padStart(2,'0')}-${String(now.getUTCDate()).padStart(2,'0')}-${String(now.getUTCHours()).padStart(2,'0')}${String(now.getUTCMinutes()).padStart(2,'0')}-${String(now.getUTCSeconds()).padStart(2,'0')}`;
-      const backup = JSON.stringify({ version, createdAt: now.toISOString(), createdBy: admin.name, semester: publishedSemester, majors: publishedMajors, courses: live.courses, sch: live.sch });
-      const status = syncStatus({ state: 'Success', phase: 'published', finishedAt: now.toISOString(), source: draft.source, publishedBy: admin.name, backupVersion: version, ...syncCounts(draft.courses, draft.sch), warnings: check.warnings.length });
-      const log = event(admin, 'sync_publish', { source: reason, backupVersion: version, changed: changes(JSON.stringify([...live.courses, ...live.sch]), JSON.stringify([...draft.courses, ...draft.sch])), method: 'Validated Self-Service draft → live catalog' });
-      const result = await publishSyncDraft({ expectedDraft: previous, expectedCoursesOverride: live.coursesOverride, expectedSchOverride: live.schOverride, backupKey: syncBackupKey(version), backup, version, courses: JSON.stringify(draft.courses), sch: JSON.stringify(draft.sch), status, history: log });
-      if (result !== 1) return res.status(409).json({ error: 'Live data or the sync draft changed. Nothing was published; refresh and review again.' });
-      return res.status(200).json({ published: true, backupVersion: version });
-    }
-    if (body.action === 'sync_restore') {
-      const version = typeof body.version === 'string' ? body.version : '';
-      const reason = typeof body.source === 'string' ? body.source.trim().slice(0, 240) : '';
-      if (!/^v\d{4}-\d{2}-\d{2}-\d{4}-\d{2}$/.test(version) || !reason) return res.status(400).json({ error: 'Choose a backup and add a restore reason.' });
-      const rawBackup = await redis(['GET', syncBackupKey(version)]);
-      if (!rawBackup) return res.status(404).json({ error: 'Backup not found.' });
-      const backup = JSON.parse(rawBackup);
-      const check = validateDataset({ semester: backup.semester, majors: backup.majors, courses: backup.courses, sch: backup.sch });
-      if (check.errors.length) return res.status(400).json({ error: 'This backup failed validation and was not restored.', errors: check.errors.slice(0, 30) });
-      const live = await effectiveCatalog();
-      const status = syncStatus({ state: 'Success', phase: 'restored', finishedAt: new Date().toISOString(), restoredVersion: version, restoredBy: admin.name });
-      const log = event(admin, 'sync_restore', { source: reason, backupVersion: version, method: 'Restore versioned Self-Service catalog backup' });
-      if (await restoreSyncBackup({ expectedCoursesOverride: live.coursesOverride, expectedSchOverride: live.schOverride, courses: JSON.stringify(backup.courses), sch: JSON.stringify(backup.sch), status, history: log }) !== 1) return res.status(409).json({ error: 'Live data changed while restoring. Nothing was restored; refresh and retry.' });
-      return res.status(200).json({ restored: true, version });
-    }
+    if (await rateLimited('admin-writes',admin.id,60,60,config.secret)) return res.status(429).json({ error:'Too many changes. Wait a minute.' });
+    if (body.action === 'sync_start' && await rateLimited('admin-sync',admin.id,4,3600,config.secret)) return res.status(429).json({ error:'Sync rate limit reached. Review history before retrying.' });
+    if (await adminCatalog(req,res,admin)) return;
     if (body.action === 'review_feedback') {
       if (typeof body.id !== 'string' || !/^[\da-f-]{36}$/i.test(body.id) || !['reviewed', 'archived', 'new'].includes(body.status) || typeof body.note !== 'string' || !body.note.trim() || body.note.length > 500) return res.status(400).json({ error: 'Choose a status and add a review note.' });
       const previous = await redis(['HGET', FEEDBACK_DATA, body.id]);
@@ -344,95 +146,9 @@ export default async function handler(req: any, res: any) {
       if (result !== 1) return res.status(409).json({ error: 'Someone else updated this report. Refresh the inbox.' });
       return res.status(200).json({ report: updated });
     }
-    if (!allowedFile(body.file)) return res.status(400).json({ error: 'Invalid filename.' });
-    if (body.action === 'validate') {
-      if (typeof body.content !== 'string' || body.content.length > 250_000) return res.status(400).json({ error: 'Dataset is missing or too large.' });
-      try { return res.status(200).json(await combinedDataset(body.file, body.content)); }
-      catch { return res.status(400).json({ error: 'Invalid JSON in a semester draft.' }); }
-    }
-    if (body.action === 'undo') {
-      const source = typeof body.source === 'string' ? body.source.trim().slice(0, 240) : '';
-      if (!source || typeof body.expectedRevision !== 'string') return res.status(400).json({ error: 'A reason and current revision are required.' });
-      const before = await redis(['GET', draftKey(body.file)]) || '';
-      if (!before) return res.status(400).json({ error: 'There is no saved draft to undo.' });
-      if (sha(before) !== body.expectedRevision) return res.status(409).json({ error: 'Another admin updated this draft. Reload before undoing.' });
-      const recent = await redis(['LRANGE', HISTORY_KEY, 0, 999]);
-      const last = (recent || []).map((row: string) => JSON.parse(row)).find((entry: any) => entry.file === body.file && ['save_draft', 'undo_draft'].includes(entry.action));
-      if (!last || last.after !== before || typeof last.before !== 'string') return res.status(409).json({ error: 'A matching history revision was not found. Review the draft manually.' });
-      const entry = event(admin, 'undo_draft', { file: body.file, source, changed: changes(before, last.before), before, after: last.before, method: 'Undo last saved draft' });
-      if (await undoWithHistory(body.file, before, last.before, entry) !== 1) return res.status(409).json({ error: 'Another admin updated this draft. Reload before undoing.' });
-      return res.status(200).json({ revision: last.before ? sha(last.before) : '', entry: JSON.parse(entry) });
-    }
-    if (body.action === 'undo_live') {
-      if (!isCatalogFile(body.file) || typeof body.expectedLiveRevision !== 'string') return res.status(400).json({ error: 'Choose a course file and its latest live revision.' });
-      const currentOverride = await redis(['GET', liveKey(body.file)]) || '';
-      const current = currentOverride || JSON.stringify(published[body.file]);
-      if (sha(current) !== body.expectedLiveRevision) return res.status(409).json({ error: 'Live data changed. Reload before undoing.' });
-      const recent = await redis(['LRANGE', HISTORY_KEY, 0, 999]);
-      const last = (recent || []).map((row: string) => JSON.parse(row)).find((row: any) => row.file === body.file && ['save_live', 'undo_live'].includes(row.action));
-      if (!last || last.after !== currentOverride || typeof last.before !== 'string') return res.status(409).json({ error: 'No matching published revision in history.' });
-      const restored = last.before || JSON.stringify(published[body.file]);
-      const other = body.file === 'courses.json' ? 'sch.json' : 'courses.json';
-      const otherContent = await redis(['GET', liveKey(other)]);
-      const check = validateDataset({ semester: publishedSemester, majors: publishedMajors, [body.file.slice(0, -5)]: JSON.parse(restored), [other.slice(0, -5)]: otherContent ? JSON.parse(otherContent) : published[other] });
-      if (check.errors.length) return res.status(400).json({ error: 'The previous revision is incompatible with the current catalog.', errors: check.errors.slice(0, 20) });
-      const entry = event(admin, 'undo_live', { file: body.file, changed: changes(current, restored), before: currentOverride, after: last.before, method: 'Restore previous public catalog revision' });
-      if (await undoLive(body.file, currentOverride, last.before, entry) !== 1) return res.status(409).json({ error: 'Live data changed. Reload before undoing.' });
-      return res.status(200).json({ revision: sha(restored), entry: JSON.parse(entry) });
-    }
-    if (body.action === 'save' || body.action === 'save_draft') {
-      const content = typeof body.content === 'string' ? body.content : '';
-      const expected = typeof body.expectedRevision === 'string' ? body.expectedRevision : '';
-      const source = typeof body.source === 'string' ? body.source.trim().slice(0, 240) : '';
-      const error = validData(body.file, content);
-      if (error) {
-        console.warn('Admin save rejected.', { file: body.file, reason: 'invalid_structure' });
-        return res.status(400).json({ error });
-      }
-      if (!source) return res.status(400).json({ error: 'Add a source or reason for this change.' });
-      const before = await redis(['GET', draftKey(body.file)]) || '';
-      if (sha(before) !== expected && !(before === '' && expected === '')) return res.status(409).json({ error: 'Another admin updated this draft. Reload it before saving.' });
-      if (body.action === 'save' && isCatalogFile(body.file)) {
-        const liveOverride = await redis(['GET', liveKey(body.file)]) || '';
-        const live = liveOverride || JSON.stringify(published[body.file]);
-        if (typeof body.expectedLiveRevision !== 'string' || sha(live) !== body.expectedLiveRevision) return res.status(409).json({ error: 'The live catalog changed. Reload this file and review the latest version before saving.' });
-        if (JSON.stringify(JSON.parse(live)) === JSON.stringify(JSON.parse(content))) {
-          console.warn('Admin save rejected.', { file: body.file, reason: 'unchanged_live_data' });
-          return res.status(400).json({ error: 'There are no changes to publish.' });
-        }
-        const other = body.file === 'courses.json' ? 'sch.json' : 'courses.json';
-        const otherContent = await redis(['GET', liveKey(other)]);
-        const check = validateDataset({ semester: publishedSemester, majors: publishedMajors, [body.file.slice(0, -5)]: JSON.parse(content), [other.slice(0, -5)]: otherContent ? JSON.parse(otherContent) : published[other] });
-        if (check.errors.length) {
-          console.warn('Admin save rejected.', { file: body.file, reason: 'catalog_validation', count: check.errors.length });
-          return res.status(400).json({ error: `Fix ${check.errors.length} catalog errors before saving.`, errors: check.errors.slice(0, 20) });
-        }
-        const ids = (value: string) => (JSON.parse(value) as Array<{ id: string }>).map(course => course.id).sort().join('\n');
-        if (ids(content) !== ids(live)) {
-          console.warn('Admin save rejected.', { file: body.file, reason: 'course_ids_changed' });
-          return res.status(400).json({ error: 'Adding or removing courses requires a reviewed deployment; this save can update existing courses only.' });
-        }
-        const entry = event(admin, 'save_live', { file: body.file, source, changed: changes(live, content), before: liveOverride, after: content, method: 'Save and publish catalog' });
-        if (await saveLive(body.file, before, liveOverride, content, entry) !== 1) return res.status(409).json({ error: 'Another admin updated this draft or live catalog. Reload and review again.' });
-        return res.status(200).json({ revision: sha(content), liveRevision: sha(content), entry: JSON.parse(entry), published: true });
-      }
-      if (before === content) return res.status(400).json({ error: 'There are no changes to save.' });
-      const entry = event(admin, 'save_draft', { file: body.file, source, changed: changes(before, content), before, after: content, method: 'Planora admin JSON editor' });
-      const result = await saveWithHistory(body.file, before, content, entry);
-      if (result !== 1) return res.status(409).json({ error: 'Another admin updated this draft. Reload it before saving.' });
-      return res.status(200).json({ revision: sha(content), entry: JSON.parse(entry) });
-    }
-    if (body.action === 'export') {
-      const content = await redis(['GET', draftKey(body.file)]);
-      if (!content) return res.status(400).json({ error: 'Save a draft before exporting it.' });
-      const check = await combinedDataset();
-      if (check.errors.length) return res.status(400).json({ error: `Semester draft has ${check.errors.length} validation errors. Run Check whole semester first.`, errors: check.errors.slice(0, 20) });
-      await redis(['LPUSH', HISTORY_KEY, event(admin, 'export_draft', { file: body.file, revision: sha(content), method: 'JSON download' })]);
-      return res.status(200).json({ content });
-    }
     return res.status(400).json({ error: 'Unknown admin action.' });
   } catch {
     console.error('Admin storage operation failed.');
-    return res.status(503).json({ error: 'The audit storage is unavailable. No change was saved; try again later.' });
+    return res.status(503).json({ error: 'The audit service is unavailable. Refresh history before retrying a change.' });
   }
 }

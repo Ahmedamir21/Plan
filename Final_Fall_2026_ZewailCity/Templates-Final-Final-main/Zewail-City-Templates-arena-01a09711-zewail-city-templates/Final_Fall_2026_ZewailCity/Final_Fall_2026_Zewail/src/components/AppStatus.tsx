@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { catalogFresh, catalogPublishedAt } from '../lib/catalogClient';
 
 interface UpdateEvent extends CustomEvent<ServiceWorkerRegistration> {}
 
@@ -37,6 +38,8 @@ export function AppStatus() {
     });
     worker.postMessage({ type: 'SKIP_WAITING' });
   };
+
+  if (!catalogFresh) return <div className="status-banner status-offline no-print" role="alert"><strong>Stale catalog</strong><span>Last downloaded publication: {catalogPublishedAt ? new Date(catalogPublishedAt).toLocaleString() : 'unknown'}. Check online before relying on it. Saved schedules are preserved.</span><button className="btn px-3 py-2" onClick={()=>window.location.reload()}>Retry online</button></div>;
 
   if (!online) {
     return (

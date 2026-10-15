@@ -12,15 +12,16 @@ jobs:
   security:
     # Review trusted, same-repository changes only. The upstream action warns about
     # prompt injection in untrusted pull requests.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    if: github.repository == 'Ahmedamir21/Plan' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
     env:
       CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
+          persist-credentials: false
       - name: Anthropic security review
         if: env.CLAUDE_API_KEY != ''
         uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda

@@ -261,7 +261,7 @@ const encoded = encodeSchedule('software', shareCourses, realPicks, {
   preferences: prefsTweaked,
   instructorFilter: { csai203: 1, phys104: 0 },
 });
-check('payload is compact base64url (no + / = chars)', !/[+/=]/.test(encoded) && encoded.length < 400);
+check('v6 meeting-fact payload is bounded base64url (no + / = chars)', !/[+/=]/.test(encoded) && encoded.length < 2000);
 const decoded = decodeSchedule(encoded)!;
 check('decode: major preserved', decoded.majorId === 'software');
 check('decode: every section key preserved', shareCourses.every((c) => decoded.picks[c.id]?.Lecture === realPicks[c.id]?.Lecture && decoded.picks[c.id]?.Lab === realPicks[c.id]?.Lab));
