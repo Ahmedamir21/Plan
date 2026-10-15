@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import { activeTerm, database } from '../server/db';
+import { activeTerm, database } from '../server/db.js';
 import {
   applySubscriptionToken,
   subscribe,
   subscriptionInput,
-} from '../server/notifications';
-import { emailConfigured, emailMode } from '../server/email-provider';
-import { jsonRequest, sameOrigin } from '../server/security';
-import { clientIp } from '../server/admin-security';
-import { rateLimited } from '../server/admin-store';
-import { SafeError, respondError } from '../server/errors';
+} from '../server/notifications.js';
+import { emailConfigured, emailMode } from '../server/email-provider.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
+import { clientIp } from '../server/admin-security.js';
+import { rateLimited } from '../server/admin-store.js';
+import { SafeError, respondError } from '../server/errors.js';
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
