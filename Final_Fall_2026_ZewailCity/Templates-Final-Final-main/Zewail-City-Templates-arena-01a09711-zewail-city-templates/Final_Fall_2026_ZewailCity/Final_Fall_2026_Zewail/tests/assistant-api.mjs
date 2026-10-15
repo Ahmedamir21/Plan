@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import handler from '../../../../../../app/api/assistant';
+import { localDatabase, useTestDatabase } from '../../../../../../app/server/db';
+process.env.NODE_ENV = 'test';
 process.env.GEMINI_API_KEY = 'test-only';
-process.env.UPSTASH_REDIS_REST_URL = 'https://redis.example.test';
-process.env.UPSTASH_REDIS_REST_TOKEN = 'test-redis-token';
+process.env.DATABASE_URL = 'postgresql://localhost/planora_test';
+const testDb = await localDatabase();
+await testDb.exec('CREATE SCHEMA IF NOT EXISTS planora; CREATE TABLE IF NOT EXISTS planora.admin_kv_store (key text PRIMARY KEY, kind text NOT NULL, value jsonb NOT NULL, expires_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now())');
+useTestDatabase(testDb);
 let seq = 0;
 const selected = { courseId: 'csai201', code: 'CSAI 201', meetings: [{type:'Lecture',section:'01',meetingId:'csai-01'}] };
 const base = {selectedCourses:[selected],selectedCourseIds:['csai201'],availableCourses:[
@@ -12,7 +16,6 @@ const base = {selectedCourses:[selected],selectedCourseIds:['csai201'],available
 async function run(name,message,context,expect,{modelResponse}={}){
  let providerCalls=0;
  globalThis.fetch=async(url,options)=>{
-  if (url === 'https://redis.example.test') return {ok:true,status:200,json:async()=>({result:1})};
   assert(!url.includes('key='), 'Gemini key leaked into URL');
   assert.equal(options.headers['x-goog-api-key'],'test-only','Gemini key missing from private header');
   providerCalls++;
@@ -32,13 +35,6 @@ await run('model claims a missing preview','Can you change this section?',{},(b,
 const counts = new Map();
 let providerCalls = 0;
 globalThis.fetch = async (url, options) => {
- if (url === 'https://redis.example.test') {
-  const [command, , , key] = JSON.parse(options.body);
-  assert.equal(command,'EVAL');
-  const n = (counts.get(key) || 0) + 1;
-  counts.set(key,n);
-  return {ok:true,json:async()=>({result:n})};
- }
  providerCalls++;
  return {ok:true,status:200,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify({text:'Ready',proposal:null,lockActions:[],constraintsAdd:[]})}]}}]})};
 };
@@ -60,21 +56,19 @@ for(let i=0;i<12;i++){
 }
 assert.equal((await secured({cookie:sessionCookie})).statusCode,429,'Assistant browser limit was bypassed across requests');
 assert.equal(providerCalls,12,'Blocked requests still reached the AI provider');
-const ipKey = [...counts.keys()].find(key => key.includes(':assistant-ip:'));
-assert(ipKey,'Shared IP limit was not counted');
-counts.set(ipKey,900);
+const ipRow = await testDb.query("SELECT key, value FROM planora.admin_kv_store WHERE key LIKE '%:assistant-ip:%' ORDER BY updated_at DESC LIMIT 1");
+assert.equal(ipRow.rows.length,1,'Shared IP limit was not counted');
+await testDb.query("UPDATE planora.admin_kv_store SET value='900'::jsonb WHERE key=$1",[ipRow.rows[0].key]);
 assert.equal((await secured()).statusCode,429,'Shared IP ceiling was bypassed');
 assert.equal(providerCalls,12,'Shared IP block still reached the AI provider');
-counts.set(ipKey,0);
+await testDb.query("UPDATE planora.admin_kv_store SET value='0'::jsonb WHERE key=$1",[ipRow.rows[0].key]);
 console.log('PASS protected assistant origin, JSON, private API key and distributed browser limit');
 
 const priorFetch = globalThis.fetch;
 const priorError = console.error;
 const logged = [];
 console.error = (...args) => logged.push(args.join(' '));
-globalThis.fetch = async (url, options) => url === 'https://redis.example.test'
- ? priorFetch(url, options)
- : {ok:false,status:400,json:async()=>({error:{message:'secret test-only should not appear in logs'}})};
+globalThis.fetch = async (url, options) => ({ok:false,status:400,json:async()=>({error:{message:'secret test-only should not appear in logs'}})});
 try {
  const result = await secured();
  assert.equal(result.statusCode,502,'Upstream error did not return a safe response');
