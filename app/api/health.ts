@@ -1,5 +1,5 @@
 /** Preview-only database diagnostic. Never returns connection details or raw errors. */
-import { database } from '../server/db.js';
+import { activeTerm, database } from '../server/db.js';
 const safeCodes = new Set([
   'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
   '28P01', '28000', '3D000', '42501', '57P03', '53300',
@@ -11,7 +11,10 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false });
   try {
     const db = await database();
-    const result = await db.query('SELECT count(*)::int AS courses FROM planora.courses WHERE term_key=$1', ['fall-2026-main']);
+    const result = await db.query(
+      'SELECT count(*)::int AS courses FROM planora.courses WHERE term_key=$1',
+      [activeTerm()]
+    );
     return res.status(200).json({ ok: true, database: 'connected', courses: result.rows[0]?.courses ?? 0 });
   } catch (error) {
     const code = error && typeof error === 'object' && 'code' in error

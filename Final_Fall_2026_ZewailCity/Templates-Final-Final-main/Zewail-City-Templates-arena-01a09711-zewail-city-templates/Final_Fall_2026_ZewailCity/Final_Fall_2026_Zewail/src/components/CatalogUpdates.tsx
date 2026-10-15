@@ -83,8 +83,10 @@ export function CatalogUpdates() {
         </span>
       </summary>
       <p className="mt-3 text-sm">
-        Only committed, validated academic changes appear here. This is a
-        planning catalog, not a record of your university registration.
+        Only committed, validated academic changes appear here. Source data was
+        last verified on {SEMESTER_CONFIG.dataLastVerified}; a SQL revision date
+        is not a new university sync. This is a planning catalog, not a record
+        of your university registration.
       </p>
       <form
         className="mt-3 flex flex-wrap items-end gap-3"
