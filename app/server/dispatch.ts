@@ -1,9 +1,9 @@
 import contract from '../../sync/source-contract.json';
-import { canonical, sha } from './catalog-model';
-import { activeTerm } from './db';
-import type { Database } from './db';
-import { createRun, failRun } from './sync-service';
-import { SafeError } from './errors';
+import { canonical, sha } from './catalog-model.js';
+import { activeTerm } from './db.js';
+import type { Database } from './db.js';
+import { createRun, failRun } from './sync-service.js';
+import { SafeError } from './errors.js';
 import { validateContract } from '../../sync/catalog-reader.mjs';
 export function syncCapability() {
   let reason = 'SOURCE_CONTRACT_NOT_APPROVED';
