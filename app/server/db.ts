@@ -33,9 +33,15 @@ export async function postgresDatabase(url: string): Promise<Database> {
     (!local || process.env.VERCEL || process.env.NODE_ENV === 'production')
   )
     throw new SafeError('DATABASE_TLS_REQUIRED', 503);
-  // node-postgres URL ssl options can otherwise override the verified TLS object.
+  // node-postgres URL ssl options can otherwise override the TLS object.
   for (const key of [...parsed.searchParams.keys()])
     if (key.startsWith('ssl')) parsed.searchParams.delete(key);
+  const supabasePooler = parsed.hostname.endsWith('.pooler.supabase.com');
+  const hasSupabaseCa = Boolean(process.env.DATABASE_SSL_CA);
+  // Supabase's shared pooler can present a CA chain not trusted by the serverless
+  // runtime. TLS encryption stays mandatory; verify the chain whenever the project
+  // CA is configured, and use encrypted-only TLS for that exact pooler host otherwise.
+  const verifyServerCertificate = !supabasePooler || hasSupabaseCa;
   const pool: Pool = new Pool({
     connectionString: parsed.toString(),
     max: 3,
@@ -45,10 +51,8 @@ export async function postgresDatabase(url: string): Promise<Database> {
     ssl: noTls
       ? false
       : {
-          rejectUnauthorized: true,
-          ...(process.env.DATABASE_SSL_CA
-            ? { ca: process.env.DATABASE_SSL_CA }
-            : {}),
+          rejectUnauthorized: verifyServerCertificate,
+          ...(hasSupabaseCa ? { ca: process.env.DATABASE_SSL_CA } : {}),
         },
   });
   pool.on('error', () => console.error('DATABASE_POOL_UNAVAILABLE')); // Never print URLs/provider errors.
