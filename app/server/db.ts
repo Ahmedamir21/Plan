@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import { SafeError } from './errors';
 
 export interface Sql {
@@ -20,6 +20,7 @@ export function useTestDatabase(db?: Database) {
   testDatabase = db;
 }
 export async function postgresDatabase(url: string): Promise<Database> {
+  const { Pool } = await import('pg');
     const parsed = new URL(url);
   if (!['postgres:', 'postgresql:'].includes(parsed.protocol))
     throw new SafeError('INVALID_DATABASE_CONFIGURATION', 503);
