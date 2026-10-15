@@ -1,8 +1,8 @@
 /** Public, non-sensitive deployment evidence. SQL is queried; configured ≠ connected. */
-import { activeTerm, database } from '../server/db';
-import { getCatalog } from '../server/catalog-repository';
-import { counts } from '../server/catalog-model';
-import { respondError } from '../server/errors';
+import { activeTerm, database } from '../server/db.js';
+import { getCatalog } from '../server/catalog-repository.js';
+import { counts } from '../server/catalog-model.js';
+import { respondError } from '../server/errors.js';
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
