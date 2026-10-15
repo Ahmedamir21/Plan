@@ -1,6 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { rateLimited, storageConfigured } from '../server/admin-store';
-import { jsonRequest, sameOrigin } from '../server/security';
+import { rateLimited, storageConfigured } from '../server/admin-store.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
 
 
 const ASSISTANT_RESPONSE_SCHEMA = {
