@@ -60,8 +60,9 @@ function testCookie() {
   process.env.PLANORA_ADMIN_AHMED_PASSWORD_HASH = hash;
   process.env.PLANORA_ADMIN_YOUSSEF_PASSWORD_HASH = hash;
   process.env.PLANORA_ADMIN_SESSION_SECRET = randomBytes(40).toString('hex');
-  process.env.UPSTASH_REDIS_REST_URL = 'https://redis.example.invalid';
-  process.env.UPSTASH_REDIS_REST_TOKEN = 'test-only-token';
+  // Admin storage now uses PostgreSQL; the test database is injected with useTestDatabase.
+  // This URL is configuration-only here and never opens a connection.
+  process.env.DATABASE_URL ||= process.env.TEST_DATABASE_URL || 'postgresql://localhost/planora_test';
   const payload = Buffer.from(
     JSON.stringify({
       id: 'ahmed',
@@ -75,6 +76,7 @@ test('SQL-only public API, publication visibility, authorization, CSRF and redac
   const db = await testDb();
   useTestDatabase(db);
   const previousFetch = globalThis.fetch;
+  const previousDatabaseUrl = process.env.DATABASE_URL;
   globalThis.fetch = async () => new Response(JSON.stringify({ result: 1 }));
   try {
     const cookie = testCookie(),
@@ -243,6 +245,8 @@ test('SQL-only public API, publication visibility, authorization, CSRF and redac
     assert.equal(failed.body.courses, undefined);
   } finally {
     globalThis.fetch = previousFetch;
+    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previousDatabaseUrl;
     useTestDatabase();
     await db.close();
   }
