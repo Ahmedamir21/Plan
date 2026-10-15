@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { redis, storageConfigured } from '../server/admin-store';
-import { notifyAdmins } from '../server/report-email';
-import { jsonRequest, sameOrigin } from '../server/security';
+import { redis, storageConfigured } from '../server/admin-store.js';
+import { notifyAdmins } from '../server/report-email.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
 
 export const REPORTS_KEY = 'planora:reports:ids:v1';
 export const REPORTS_DATA = 'planora:reports:data:v1';
