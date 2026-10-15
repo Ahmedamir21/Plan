@@ -105,12 +105,15 @@ export function CatalogUpdates() {
         </label>
         <label className="text-xs">
           Term
-          <input
+          <select
             className="select mt-1"
             value={term}
-            maxLength={100}
             onChange={(e) => setTerm(e.target.value)}
-          />
+          >
+            <option value={SEMESTER_CONFIG.key}>
+              {SEMESTER_CONFIG.term} {SEMESTER_CONFIG.year}
+            </option>
+          </select>
         </label>
         <label className="text-xs">
           Change category
