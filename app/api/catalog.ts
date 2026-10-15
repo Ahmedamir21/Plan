@@ -1,6 +1,6 @@
-import { activeTerm, database } from '../server/db';
-import { getCatalog } from '../server/catalog-repository';
-import { SafeError, respondError } from '../server/errors';
+import { activeTerm, database } from '../server/db.js';
+import { getCatalog } from '../server/catalog-repository.js';
+import { SafeError, respondError } from '../server/errors.js';
 export type CatalogFile = 'courses.json' | 'sch.json';
 export const isCatalogFile = (file: unknown): file is CatalogFile =>
   file === 'courses.json' || file === 'sch.json';
