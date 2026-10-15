@@ -1,4 +1,4 @@
-import contract from '../../sync/source-contract.json';
+import contract from '../../sync/source-contract.json' with { type: 'json' };
 import { canonical, sha } from './catalog-model.js';
 import { activeTerm } from './db.js';
 import type { Database } from './db.js';
