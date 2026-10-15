@@ -1,12 +1,12 @@
 import { createHash, createHmac, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { HISTORY_KEY, rateLimited, redis, storageConfigured } from '../server/admin-store';
-import { jsonRequest, sameOrigin } from '../server/security';
-import { ADMIN_ACCOUNTS } from '../admin-accounts';
-import { REPORTS_DATA, REPORTS_KEY } from './reports';
-import { REPORT_EMAIL_STATUS } from '../server/report-email';
-import { FEEDBACK_DATA, FEEDBACK_IDS, feedbackSummary, type Feedback } from './feedback';
-import { SECURITY_KEY, clientIp, securityEmail, securityEvent } from '../server/admin-security';
-import { adminCatalog, academicHistory } from '../server/admin-catalog';
+import { HISTORY_KEY, rateLimited, redis, storageConfigured } from '../server/admin-store.js';
+import { jsonRequest, sameOrigin } from '../server/security.js';
+import { ADMIN_ACCOUNTS } from '../admin-accounts.js';
+import { REPORTS_DATA, REPORTS_KEY } from './reports.js';
+import { REPORT_EMAIL_STATUS } from '../server/report-email.js';
+import { FEEDBACK_DATA, FEEDBACK_IDS, feedbackSummary, type Feedback } from './feedback.js';
+import { SECURITY_KEY, clientIp, securityEmail, securityEvent } from '../server/admin-security.js';
+import { adminCatalog, academicHistory } from '../server/admin-catalog.js';
 
 const COOKIE = 'planora_admin';
 const UPDATE_REPORT = `local old = redis.call('HGET', KEYS[1], ARGV[1])
