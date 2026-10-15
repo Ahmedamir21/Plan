@@ -240,9 +240,16 @@ async function main() {
   delete process.env.PLANORA_SECURITY_MAIL_ENABLED;
   delete process.env.PLANORA_REPORT_MAIL_WEBHOOK_URL;
   storageDown = true;
+  useTestDatabase({
+    query: async () => { throw new Error('Storage unavailable'); },
+    exec: async () => { throw new Error('Storage unavailable'); },
+    transaction: async () => { throw new Error('Storage unavailable'); },
+    close: async () => {},
+  });
   const failed = await call('POST', { action: 'login', username: 'ahmed', password: 'ahmed-long-test-password' });
   assert(failed.code === 503 && !failed.cookie, 'Login succeeded without audit storage');
   storageDown = false;
+  useTestDatabase(db);
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
   assert(storageConfigured(), 'PostgreSQL storage configuration was not detected');
