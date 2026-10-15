@@ -1,7 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
-import type { Database } from './db';
-import { SafeError } from './errors';
+import type { Database } from './db.js';
+import { SafeError } from './errors.js';
 import {
   emailConfigured,
   emailMode,
@@ -9,7 +9,7 @@ import {
   MailError,
   type EmailProvider,
   type Mail,
-} from './email-provider';
+} from './email-provider.js';
 const emailSchema = z.string().trim().toLowerCase().max(254).email();
 export const subscriptionInput = z
   .object({
