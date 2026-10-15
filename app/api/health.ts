@@ -1,5 +1,5 @@
 /** Preview-only database diagnostic. Never returns connection details or raw errors. */
-import { database } from '../server/db';
+import { database } from '../server/db.ts';
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
