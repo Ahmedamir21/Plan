@@ -1,5 +1,5 @@
-import { activeTerm, database } from '../server/db';
-import { SafeError, respondError } from '../server/errors';
+import { activeTerm, database } from '../server/db.js';
+import { SafeError, respondError } from '../server/errors.js';
 const categories = [
   'course_added',
   'course_removed',
