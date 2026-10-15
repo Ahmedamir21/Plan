@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { activeTerm, database, type Sql } from './db';
-import { getCatalog, readCatalog } from './catalog-repository';
+import { activeTerm, database, type Sql } from './db.js';
+import { getCatalog, readCatalog } from './catalog-repository.js';
 import {
   canonical,
   counts,
   normalizeDataset,
   sha,
   type Dataset,
-} from './catalog-model';
+} from './catalog-model.js';
 import {
   cancelRun,
   createRun,
@@ -17,10 +17,10 @@ import {
   publishRun,
   stageRun,
   syncHistory,
-} from './sync-service';
-import { dispatchSync, syncCapability } from './dispatch';
-import { deliverNotifications } from './notifications';
-import { SafeError, respondError } from './errors';
+} from './sync-service.js';
+import { dispatchSync, syncCapability } from './dispatch.js';
+import { deliverNotifications } from './notifications.js';
+import { SafeError, respondError } from './errors.js';
 
 const files = [
   'semester.json',
