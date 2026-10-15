@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Database, Sql } from './db';
-import { SafeError } from './errors';
+import type { Database, Sql } from './db.js';
+import { SafeError } from './errors.js';
 import {
   buckets,
   canonical,
@@ -11,7 +11,7 @@ import {
   sectionKey,
   type Course,
   type Dataset,
-} from './catalog-model';
+} from './catalog-model.js';
 
 export type Catalog = {
   dataset: Dataset;
