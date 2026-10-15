@@ -1,4 +1,4 @@
-import { SafeError } from './errors';
+import { SafeError } from './errors.js';
 export type EmailMode = 'disabled' | 'mock' | 'resend-test' | 'resend';
 export type Mail = { to: string; subject: string; text: string };
 export interface EmailProvider {
